@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Dumbbell, TrendingUp, Brain, Target, ChevronRight, Activity, Moon, Zap, CheckCircle, Upload, Apple, Camera, Download, Settings as SettingsIcon, History as HistoryIcon } from 'lucide-react';
+import { getCurrentDayKey, getTodayDateKey } from './utils/dateUtils';
+
 
 // Import components
 import WorkoutParser from './components/WorkoutParser';
 import ProgressCharts from './components/ProgressCharts';
 import AICoach from './components/AICoach';
-import NutritionTracker from './components/NutritionTracker';
 import ProgressPhotos from './components/ProgressPhotos';
 import ExportData from './components/ExportData';
 import EnhancedCalendar from './components/EnhancedCalendar';
@@ -170,10 +171,6 @@ export default function App() {
 
   if (view === 'ai') {
     return <AICoach workoutLogs={workoutLog} onClose={() => setView('home')} />;
-  }
-
-  if (view === 'nutrition') {
-    return <NutritionTracker onClose={() => setView('home')} />;
   }
 
   if (view === 'photos') {
@@ -362,15 +359,6 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
           <Brain className="w-8 h-8 mx-auto mb-2 text-white" />
           <div className="font-semibold">Coach IA</div>
           <div className="text-xs text-purple-200">Consulta</div>
-        </button>
-
-        <button 
-          onClick={() => onNavigate('nutrition')}
-          className="bg-gradient-to-br from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 p-4 rounded-2xl transition-all shadow-lg"
-        >
-          <Apple className="w-8 h-8 mx-auto mb-2 text-white" />
-          <div className="font-semibold">Nutrición</div>
-          <div className="text-xs text-orange-200">Macros</div>
         </button>
 
         <button 

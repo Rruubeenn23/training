@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Settings, Sparkles, MessageCircle, TrendingUp, Zap, AlertCircle } from 'lucide-react';
+import { Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle } from 'lucide-react';
 import { getSettings, saveSettings, getDailyFeelings, getWorkoutMetadata } from '../utils/storageHelper';
 import { getAllExercises, getExerciseHistory } from '../utils/storageHelper';
+import { getTodayFullInfo, getTodayDateKey } from '../utils/dateUtils';
 
 export default function AICoach({ workoutLogs, onClose }) {
   const [apiKey, setApiKey] = useState('');
@@ -46,17 +47,32 @@ export default function AICoach({ workoutLogs, onClose }) {
   };
 
   const addWelcomeMessage = () => {
+    const todayInfo = getTodayFullInfo();
     setMessages([{
       role: 'assistant',
-      content: '¡Hola Rubén! 💪 Soy tu coach de IA. Puedo ayudarte con:\n\n• Analizar tu progreso\n• Dar recomendaciones de entrenamiento\n• Ajustar volumen e intensidad\n• Responder dudas sobre ejercicios\n\n¿En qué puedo ayudarte hoy?',
+      content: `¡Hola Rubén! 💪 Hoy es **${todayInfo.dayName} ${new Date().getDate()} de ${new Date().toLocaleDateString('es-ES', {month: 'long'})}**.
+
+Soy tu coach de IA. Puedo ayudarte con:
+
+• Analizar tu progreso
+• Dar recomendaciones
+• Ajustar volumen e intensidad
+• Responder dudas sobre ejercicios
+
+¿En qué puedo ayudarte?`,
       timestamp: new Date()
     }]);
   };
 
   const buildContext = async () => {
+    const todayInfo = getTodayFullInfo();
     const feelings = await getDailyFeelings();
     const metadata = await getWorkoutMetadata();
     const exercises = getAllExercises(workoutLogs);
+    
+    // Entrenamiento de HOY
+    const todayWorkout = workoutLogs[todayInfo.dateKey];
+    const todayHasWorkout = todayWorkout && Object.keys(todayWorkout).length > 0;
     
     const recentWorkouts = Object.entries(workoutLogs)
       .sort(([dateA], [dateB]) => new Date(dateB) - new Date(dateA))
@@ -93,11 +109,20 @@ export default function AICoach({ workoutLogs, onClose }) {
       .sort(([dateA], [dateB]) => new Date(dateB) - new Date(dateA))
       .slice(0, 3);
 
-    return `Contexto del cliente Rubén:
+    return `FECHA ACTUAL: ${todayInfo.fullDate}
+DÍA DE LA SEMANA: ${todayInfo.dayName}
+FECHA KEY: ${todayInfo.dateKey}
+
+${todayHasWorkout ? `
+ENTRENAMIENTO DE HOY (${todayInfo.dateKey}):
+${Object.entries(todayWorkout).map(([ex, sets]) => `- ${ex}: ${Object.keys(sets).length} series`).join('\n')}
+` : `
+NO HAY ENTRENAMIENTO REGISTRADO HOY (${todayInfo.dateKey})
+`}
 
 Objetivo: Recomposición corporal (definición + mantener músculo)
 
-Rutina:
+Rutina semanal:
 - Lunes: Empuje (Pecho/Hombro/Tríceps) - Alta
 - Martes: Tracción (Espalda/Bíceps) - Media-Alta
 - Miércoles: Pierna - Media
@@ -105,12 +130,22 @@ Rutina:
 - Viernes: Fútbol
 - Domingo: Pádel
 
-Últimos entrenamientos: ${recentWorkouts.length}
-${recentWorkouts.slice(0, 2).map(([date, ex]) => `- ${date}: ${Object.keys(ex).length} ejercicios`).join('\n')}
+${recentWorkouts.length > 0 ? `
+Últimos entrenamientos:
+${recentWorkouts.slice(0, 3).map(([date, ex]) => `- ${date}: ${Object.keys(ex).length} ejercicios`).join('\n')}
+` : ''}
 
-${Object.keys(progressions).length > 0 ? `\nProgresión top ejercicios:\n${Object.entries(progressions).slice(0, 3).map(([ex, d]) => `- ${ex}: ${d.startWeight}→${d.currentWeight}kg (+${d.progress}kg)`).join('\n')}` : ''}
+${Object.keys(progressions).length > 0 ? `
+Progresión ejercicios principales:
+${Object.entries(progressions).slice(0, 3).map(([ex, d]) => `- ${ex}: ${d.startWeight}→${d.currentWeight}kg (+${d.progress}kg en ${d.sessions} sesiones)`).join('\n')}
+` : ''}
 
-${recentFeelings.length > 0 ? `\nÚltimo estado:\nEnergía: ${recentFeelings[0][1].energy}/10, Sueño: ${recentFeelings[0][1].sleep}/10, Motivación: ${recentFeelings[0][1].motivation}/10` : ''}`;
+${recentFeelings.length > 0 ? `
+Estado reciente:
+${recentFeelings.slice(0, 1).map(([date, f]) => `- ${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10, Motivación ${f.motivation}/10`).join('\n')}
+` : ''}
+
+Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workoutLogs[d]).length > 0).length}`;
   };
 
   const sendMessage = async () => {
@@ -133,10 +168,6 @@ ${recentFeelings.length > 0 ? `\nÚltimo estado:\nEnergía: ${recentFeelings[0][
 
       if (aiProvider === 'groq') {
         aiText = await callGroqAPI(context, inputMessage);
-      } else if (aiProvider === 'openrouter') {
-        aiText = await callOpenRouterAPI(context, inputMessage);
-      } else if (aiProvider === 'huggingface') {
-        aiText = await callHuggingFaceAPI(context, inputMessage);
       }
 
       const assistantMessage = {
@@ -151,7 +182,7 @@ ${recentFeelings.length > 0 ? `\nÚltimo estado:\nEnergía: ${recentFeelings[0][
       
       const errorMessage = {
         role: 'assistant',
-        content: `❌ Error: ${error.message}\n\nVerifica:\n• Tu API key es correcta\n• Tienes conexión a internet\n• No has excedido el límite de peticiones`,
+        content: `❌ Error: ${error.message}`,
         timestamp: new Date()
       };
       
@@ -190,12 +221,10 @@ ${context}`
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('Groq API error:', errorData);
-        
         if (response.status === 401) {
           throw new Error('API key inválida. Verifica tu key de Groq.');
         } else if (response.status === 429) {
-          throw new Error('Límite de peticiones alcanzado. Espera un momento.');
+          throw new Error('Límite alcanzado. Espera un momento.');
         } else {
           throw new Error(`Error ${response.status}: ${errorData.error?.message || 'Error desconocido'}`);
         }
@@ -204,90 +233,20 @@ ${context}`
       const data = await response.json();
       
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error('Respuesta inválida de Groq');
+        throw new Error('Respuesta inválida');
       }
       
       return data.choices[0].message.content;
     } catch (error) {
-      throw new Error(`Groq: ${error.message}`);
-    }
-  };
-
-  const callOpenRouterAPI = async (context, message) => {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": window.location.origin,
-          "X-Title": "Training Tracker"
-        },
-        body: JSON.stringify({
-          model: "meta-llama/llama-3.1-8b-instruct:free",
-          messages: [
-            {
-              role: "system",
-              content: `Entrenador personal experto. ${context}`
-            },
-            {
-              role: "user",
-              content: message
-            }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Error ${response.status}: ${errorData.error?.message || 'Error desconocido'}`);
-      }
-
-      const data = await response.json();
-      return data.choices[0].message.content;
-    } catch (error) {
-      throw new Error(`OpenRouter: ${error.message}`);
-    }
-  };
-
-  const callHuggingFaceAPI = async (context, message) => {
-    try {
-      const response = await fetch("https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          inputs: `${context}\n\nUsuario: ${message}\nAsistente:`,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.7
-          }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      
-      return data[0].generated_text.split('Asistente:')[1]?.trim() || data[0].generated_text;
-    } catch (error) {
-      throw new Error(`HuggingFace: ${error.message}`);
+      throw new Error(`${error.message}`);
     }
   };
 
   const quickPrompts = [
-    "Analiza mi progreso general",
-    "¿Debería aumentar peso?",
+    "¿Analiza mi progreso?",
+    "¿Debería subir peso?",
     "¿Cómo va mi sentadilla?",
-    "Dame tips para mejorar"
+    "Dame un consejo"
   ];
 
   if (showSettings) {
@@ -309,7 +268,7 @@ ${context}`
               <Settings className="w-7 h-7" />
               Configurar IA Gratuita
             </h1>
-            <p className="text-purple-100 text-sm">Usa Groq (Llama 3.3) completamente gratis</p>
+            <p className="text-purple-100 text-sm">Groq (Llama 3.3) - 100% gratis</p>
           </div>
 
           {error && (
@@ -319,56 +278,21 @@ ${context}`
             </div>
           )}
 
-          {/* Provider selector */}
           <div className="bg-slate-800 rounded-2xl p-6 mb-4">
-            <h3 className="font-bold mb-4">Proveedor de IA</h3>
+            <h3 className="font-bold mb-4">Groq (Recomendado)</h3>
             
-            <div className="space-y-3 mb-4">
-              <button
-                onClick={() => setAiProvider('groq')}
-                className={`w-full p-4 rounded-xl text-left transition-all ${
-                  aiProvider === 'groq' 
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 ring-2 ring-green-400' 
-                    : 'bg-slate-700 hover:bg-slate-600'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-bold flex items-center gap-2">
-                    <Zap className="w-5 h-5" />
-                    Groq (Recomendado)
-                  </div>
-                  {aiProvider === 'groq' && <span className="text-xs bg-white/20 px-2 py-1 rounded">✓</span>}
-                </div>
-                <p className="text-sm text-gray-300">
-                  ✅ 100% GRATIS sin límites<br/>
-                  ⚡ Ultra rápido (2-3s)<br/>
-                  🧠 Llama 3.3 70B<br/>
-                  ❌ Sin tarjeta de crédito
-                </p>
-              </button>
-
-              <button
-                onClick={() => setAiProvider('openrouter')}
-                className={`w-full p-4 rounded-xl text-left transition-all ${
-                  aiProvider === 'openrouter' 
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-800 ring-2 ring-blue-400' 
-                    : 'bg-slate-700 hover:bg-slate-600'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-bold">OpenRouter</div>
-                  {aiProvider === 'openrouter' && <span className="text-xs bg-white/20 px-2 py-1 rounded">✓</span>}
-                </div>
-                <p className="text-sm text-gray-300">
-                  ✅ Modelos gratis disponibles<br/>
-                  ⚠️ Más lento que Groq
-                </p>
-              </button>
+            <div className="bg-green-500/10 border border-green-500/50 rounded-xl p-4 mb-4">
+              <p className="text-sm text-green-300">
+                ✅ 100% GRATIS sin límites<br/>
+                ⚡ Ultra rápido (2-3s)<br/>
+                🧠 Llama 3.3 70B<br/>
+                ❌ Sin tarjeta de crédito
+              </p>
             </div>
 
             <div className="mb-4">
               <label className="block text-sm text-gray-400 mb-2">
-                {aiProvider === 'groq' ? 'API Key de Groq' : 'API Key de OpenRouter'}:
+                API Key de Groq:
               </label>
               <input
                 type="password"
@@ -377,35 +301,20 @@ ${context}`
                   setApiKey(e.target.value);
                   setError('');
                 }}
-                placeholder={aiProvider === 'groq' ? 'gsk_...' : 'sk-or-...'}
+                placeholder="gsk_..."
                 className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
             <div className="bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 mb-4 text-sm">
-              <p className="font-semibold mb-2">
-                {aiProvider === 'groq' ? '⚡ Cómo conseguir API key de Groq:' : '🔑 Cómo conseguir API key:'}
-              </p>
+              <p className="font-semibold mb-2">⚡ Cómo conseguir API key:</p>
               <ol className="list-decimal ml-4 space-y-1 text-gray-300">
-                {aiProvider === 'groq' && (
-                  <>
-                    <li>Ve a <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline font-semibold">console.groq.com</a></li>
-                    <li>Crea cuenta con Google o email</li>
-                    <li>Click en "API Keys" en el menú</li>
-                    <li>Click "Create API Key"</li>
-                    <li>Dale un nombre y crea</li>
-                    <li>Copia la key (empieza con gsk_...)</li>
-                    <li>Pégala aquí arriba</li>
-                  </>
-                )}
-                {aiProvider === 'openrouter' && (
-                  <>
-                    <li>Ve a <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">openrouter.ai/keys</a></li>
-                    <li>Crea cuenta</li>
-                    <li>Crea nueva key</li>
-                    <li>Cópiala y pégala aquí</li>
-                  </>
-                )}
+                <li>Ve a <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline font-semibold">console.groq.com</a></li>
+                <li>Crea cuenta con Google</li>
+                <li>Click en "API Keys"</li>
+                <li>Click "Create API Key"</li>
+                <li>Copia la key (gsk_...)</li>
+                <li>Pégala aquí</li>
               </ol>
             </div>
 
@@ -421,19 +330,6 @@ ${context}`
               {apiKey.trim() ? '✅ Guardar y activar' : 'Ingresa una API key'}
             </button>
           </div>
-
-          {aiProvider === 'groq' && (
-            <div className="bg-green-500/10 border border-green-500/50 rounded-xl p-4 text-sm">
-              <p className="font-semibold mb-2 text-green-400">💡 Groq es la mejor opción:</p>
-              <ul className="space-y-1 text-gray-300 ml-4 list-disc">
-                <li>Completamente gratis, sin límites ocultos</li>
-                <li>No pide tarjeta de crédito nunca</li>
-                <li>Llama 3.3 70B (muy inteligente)</li>
-                <li>Responde en 2-3 segundos</li>
-                <li>Perfect para entrenamiento personal</li>
-              </ul>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -441,7 +337,6 @@ ${context}`
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col">
-      {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 flex items-center justify-between shadow-lg">
         <button onClick={onClose} className="text-purple-100 hover:text-white">
           ← Volver
@@ -449,7 +344,7 @@ ${context}`
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Brain className="w-6 h-6" />
           Coach IA
-          {aiProvider === 'groq' && <span className="text-xs bg-white/20 px-2 py-1 rounded">Groq ⚡</span>}
+          <span className="text-xs bg-white/20 px-2 py-1 rounded">Groq ⚡</span>
         </h1>
         <button 
           onClick={() => setShowSettings(true)}
@@ -467,14 +362,6 @@ ${context}`
             <p className="text-gray-400 mb-6">
               Usa <strong className="text-green-400">Groq</strong> (Llama 3.3) completamente gratis
             </p>
-            <div className="bg-green-500/10 border border-green-500/50 rounded-xl p-4 mb-6 text-sm text-left">
-              <p className="font-semibold mb-2 text-green-400">✨ Sin costo oculto:</p>
-              <ul className="space-y-1 text-gray-300 ml-4 list-disc">
-                <li>100% gratis sin límites</li>
-                <li>No pide tarjeta de crédito</li>
-                <li>Setup en 2 minutos</li>
-              </ul>
-            </div>
             <button
               onClick={() => setShowSettings(true)}
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg"
@@ -485,7 +372,6 @@ ${context}`
         </div>
       ) : (
         <>
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((msg, idx) => (
               <div
@@ -522,7 +408,6 @@ ${context}`
             )}
           </div>
 
-          {/* Quick prompts */}
           {messages.length === 1 && (
             <div className="px-4 pb-2">
               <p className="text-xs text-gray-500 mb-2">Sugerencias:</p>
@@ -540,7 +425,6 @@ ${context}`
             </div>
           )}
 
-          {/* Input */}
           <div className="p-4 bg-slate-900 border-t border-slate-700">
             <div className="flex gap-2">
               <input
