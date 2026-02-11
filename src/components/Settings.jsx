@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, Cloud, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { Settings as SettingsIcon, Database, Cloud, CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
 import { getSettings, saveSettings } from '../utils/storageHelper';
 import { initSupabase, syncToSupabase, loadFromSupabase, isSupabaseConfigured } from '../utils/database';
 import { exportAllData } from '../utils/storageHelper';
 
-export default function Settings({ onBack }) {
+export default function Settings({ onBack, onSupabaseConfigured }) {
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -51,20 +51,22 @@ export default function Settings({ onBack }) {
     await saveSettings(settings);
 
     setIsConnected(true);
-    setSyncStatus({ type: 'success', message: '✅ Conectado a Supabase' });
+    setSyncStatus({ type: 'success', message: '✅ Conectado a Supabase - Auto-sync activado' });
 
-    // Auto-sync después de conectar
-    setTimeout(() => handleSync(), 1000);
+    // Llamar callback para que App.jsx reinicialize
+    if (onSupabaseConfigured) {
+      onSupabaseConfigured();
+    }
   };
 
-  const handleSync = async () => {
+  const handleManualSync = async () => {
     if (!isConnected) {
       setError('Primero debes conectar con Supabase');
       return;
     }
 
     setIsSyncing(true);
-    setSyncStatus({ type: 'info', message: 'Sincronizando...' });
+    setSyncStatus({ type: 'info', message: 'Sincronizando manualmente...' });
 
     try {
       const localData = await exportAllData();
@@ -81,7 +83,7 @@ export default function Settings({ onBack }) {
       } else {
         setSyncStatus({
           type: 'success',
-          message: `✅ Sincronizado: ${total} registros guardados en la nube`
+          message: `✅ Sincronizado manualmente: ${total} registros actualizados`
         });
       }
     } catch (error) {
@@ -101,7 +103,7 @@ export default function Settings({ onBack }) {
       return;
     }
 
-    if (!confirm('¿Cargar datos desde la nube? Esto sobrescribirá tus datos locales.')) {
+    if (!confirm('¿Cargar datos desde la nube? Esto combinará los datos de la nube con tus datos locales.')) {
       return;
     }
 
@@ -167,32 +169,105 @@ export default function Settings({ onBack }) {
         </div>
 
         {isConnected ? (
-          <div className="bg-green-500/20 border border-green-500 rounded-xl p-4 mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="w-5 h-5 text-green-400" />
-              <p className="font-semibold text-green-400">Conectado a Supabase</p>
+          <div className="space-y-4">
+            <div className="bg-green-500/20 border border-green-500 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="w-5 h-5 text-green-400" />
+                <p className="font-semibold text-green-400">Conectado a Supabase</p>
+              </div>
+              <p className="text-sm text-gray-300 mb-2">
+                URL: {supabaseUrl.substring(0, 30)}...
+              </p>
+              <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-3 mt-3">
+                <p className="text-sm text-blue-300 font-semibold mb-2">🚀 Auto-sync ACTIVO</p>
+                <p className="text-xs text-gray-300">
+                  Cada vez que registres un entrenamiento, sensación o nutrición, se guardará automáticamente en la nube. No necesitas sincronizar manualmente.
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-gray-300">
-              URL: {supabaseUrl.substring(0, 30)}...
-            </p>
+
+            {/* Manual sync options (por si acaso) */}
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">Opciones manuales (normalmente no necesarias):</p>
+              
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${
+                  isSyncing
+                    ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white'
+                }`}
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-5 h-5" />
+                    Forzar sincronización completa
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleLoadFromCloud}
+                disabled={isSyncing}
+                className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${
+                  isSyncing
+                    ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
+                }`}
+              >
+                {isSyncing ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    Descargando...
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-5 h-5" />
+                    Descargar desde la nube
+                  </>
+                )}
+              </button>
+            </div>
+
+            {syncStatus && (
+              <div className={`rounded-xl p-4 ${
+                syncStatus.type === 'success' ? 'bg-green-500/20 border border-green-500' :
+                syncStatus.type === 'error' ? 'bg-red-500/20 border border-red-500' :
+                syncStatus.type === 'warning' ? 'bg-yellow-500/20 border border-yellow-500' :
+                'bg-blue-500/20 border border-blue-500'
+              }`}>
+                <p className={`text-sm ${
+                  syncStatus.type === 'success' ? 'text-green-100' :
+                  syncStatus.type === 'error' ? 'text-red-100' :
+                  syncStatus.type === 'warning' ? 'text-yellow-100' :
+                  'text-blue-100'
+                }`}>
+                  {syncStatus.message}
+                </p>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="bg-yellow-500/20 border border-yellow-500 rounded-xl p-4 mb-4">
-            <p className="text-yellow-400 text-sm">
-              No conectado. Configura Supabase para backup automático en la nube.
-            </p>
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-500/20 border border-red-500 rounded-xl p-4 mb-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-red-100 text-sm">{error}</p>
-          </div>
-        )}
-
-        {!isConnected && (
           <>
+            <div className="bg-yellow-500/20 border border-yellow-500 rounded-xl p-4 mb-4">
+              <p className="text-yellow-400 text-sm">
+                No conectado. Configura Supabase para backup automático en la nube.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-500/20 border border-red-500 rounded-xl p-4 mb-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-red-100 text-sm">{error}</p>
+              </div>
+            )}
+
             <div className="space-y-4 mb-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-2">
@@ -245,82 +320,16 @@ export default function Settings({ onBack }) {
             </button>
           </>
         )}
-
-        {isConnected && (
-          <div className="space-y-3">
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${
-                isSyncing
-                  ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white'
-              }`}
-            >
-              {isSyncing ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <Cloud className="w-5 h-5" />
-                  Subir a la nube
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={handleLoadFromCloud}
-              disabled={isSyncing}
-              className={`w-full font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 ${
-                isSyncing
-                  ? 'bg-slate-700 text-gray-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
-              }`}
-            >
-              {isSyncing ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Descargando...
-                </>
-              ) : (
-                <>
-                  <Database className="w-5 h-5" />
-                  Descargar desde la nube
-                </>
-              )}
-            </button>
-
-            {syncStatus && (
-              <div className={`rounded-xl p-4 ${
-                syncStatus.type === 'success' ? 'bg-green-500/20 border border-green-500' :
-                syncStatus.type === 'error' ? 'bg-red-500/20 border border-red-500' :
-                syncStatus.type === 'warning' ? 'bg-yellow-500/20 border border-yellow-500' :
-                'bg-blue-500/20 border border-blue-500'
-              }`}>
-                <p className={`text-sm ${
-                  syncStatus.type === 'success' ? 'text-green-100' :
-                  syncStatus.type === 'error' ? 'text-red-100' :
-                  syncStatus.type === 'warning' ? 'text-yellow-100' :
-                  'text-blue-100'
-                }`}>
-                  {syncStatus.message}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* About */}
       <div className="bg-slate-800 rounded-2xl p-6">
         <h3 className="font-bold mb-4">Acerca de</h3>
         <div className="space-y-2 text-sm text-gray-300">
-          <p><strong>Versión:</strong> 2.2.0</p>
+          <p><strong>Versión:</strong> 3.0.0</p>
           <p><strong>Desarrollado para:</strong> Rubén</p>
           <p className="pt-4 text-gray-400">
-            Training Tracker - App profesional de seguimiento de entrenamientos con IA gratuita (Groq), gráficas, nutrición, backup en la nube (Supabase) y más.
+            Training Tracker - App profesional de seguimiento de entrenamientos con IA gratuita (Groq), gráficas, nutrición, backup automático en la nube (Supabase) y más.
           </p>
         </div>
       </div>
@@ -329,9 +338,11 @@ export default function Settings({ onBack }) {
       <div className="mt-6 bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 text-sm text-gray-300">
         <p className="font-semibold mb-2">✨ Características:</p>
         <ul className="space-y-1 ml-4 list-disc">
+          <li><strong>NUEVO:</strong> Auto-sync automático con Supabase</li>
+          <li><strong>NUEVO:</strong> Carga automática desde la nube al iniciar</li>
+          <li><strong>ARREGLADO:</strong> Fechas correctas sin desfase de 1 día</li>
           <li>Importación desde Motra con fechas correctas</li>
           <li>IA gratuita con Groq (Llama 3.3)</li>
-          <li>Base de datos en la nube con Supabase</li>
           <li>Calendario visual mejorado</li>
           <li>Historial con búsqueda y filtros</li>
           <li>Gráficas de progreso interactivas</li>
@@ -339,6 +350,18 @@ export default function Settings({ onBack }) {
           <li>Fotos de progreso con comparación</li>
           <li>Exportar/Importar datos</li>
           <li>PWA instalable en iPhone</li>
+        </ul>
+      </div>
+
+      {/* Auto-sync explanation */}
+      <div className="mt-6 bg-green-500/10 border border-green-500/50 rounded-xl p-4 text-sm">
+        <p className="font-semibold mb-2 text-green-300">🚀 Cómo funciona el Auto-sync:</p>
+        <ul className="space-y-1 text-gray-300 ml-4 list-disc">
+          <li>Al iniciar la app, se cargan automáticamente tus datos desde Supabase</li>
+          <li>Cada vez que registras un entrenamiento, se sube instantáneamente a la nube</li>
+          <li>Lo mismo con sensaciones y nutrición - todo se sincroniza automáticamente</li>
+          <li>No necesitas dar a ningún botón de sincronizar</li>
+          <li>Tus datos están siempre respaldados y accesibles desde cualquier dispositivo</li>
         </ul>
       </div>
     </div>

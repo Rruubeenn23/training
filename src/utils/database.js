@@ -1,29 +1,24 @@
 /**
- * Database configuration - Supabase (FREE)
+ * Database configuration - Supabase (FREE) con AUTO-SYNC
  * 
- * Supabase ofrece:
- * - 500MB de base de datos gratis
- * - Auth gratis
- * - Storage gratis (1GB)
- * - API automática
- * 
- * Setup:
- * 1. Ir a supabase.com
- * 2. Crear proyecto gratuito
- * 3. Copiar URL y anon key
- * 4. Pegar aquí
+ * MEJORAS:
+ * - Auto-sync en CADA operación (no manual)
+ * - Auto-load al iniciar la app
+ * - Sincronización en background sin interferir
  */
 
 import { createClient } from '@supabase/supabase-js';
 
 // Configuración - Obtener de settings
 let supabaseClient = null;
+let autoSyncEnabled = false;
 
 export function initSupabase(url, key) {
   if (!url || !key) return null;
   
   try {
     supabaseClient = createClient(url, key);
+    autoSyncEnabled = true;
     return supabaseClient;
   } catch (error) {
     console.error('Error initializing Supabase:', error);
@@ -39,47 +34,13 @@ export function isSupabaseConfigured() {
   return supabaseClient !== null;
 }
 
-/**
- * Database schema para Supabase:
- * 
- * Table: workouts
- * - id: uuid (primary key)
- * - user_id: text (para multi-usuario futuro)
- * - date: date (fecha del entrenamiento)
- * - exercises: jsonb (objeto con ejercicios y series)
- * - metadata: jsonb (duración, volumen, etc)
- * - created_at: timestamp
- * - updated_at: timestamp
- * 
- * Table: feelings
- * - id: uuid (primary key)
- * - user_id: text
- * - date: date
- * - energy: int
- * - sleep: int
- * - motivation: int
- * - created_at: timestamp
- * 
- * Table: nutrition
- * - id: uuid (primary key)
- * - user_id: text
- * - date: date
- * - protein: float
- * - carbs: float
- * - fats: float
- * - water: float
- * - created_at: timestamp
- * 
- * Table: photos
- * - id: uuid (primary key)
- * - user_id: text
- * - date: date
- * - image_url: text (URL en Supabase Storage)
- * - notes: text
- * - created_at: timestamp
- */
+export function setAutoSync(enabled) {
+  autoSyncEnabled = enabled;
+}
 
-// SQL para crear las tablas (ejecutar en Supabase SQL editor)
+/**
+ * Database schema para Supabase
+ */
 export const DATABASE_SCHEMA = `
 -- Workouts table
 CREATE TABLE IF NOT EXISTS workouts (
@@ -149,7 +110,174 @@ CREATE POLICY "Enable all access for photos" ON photos FOR ALL USING (true);
 `;
 
 /**
- * Sync local data to Supabase
+ * AUTO-SYNC: Sube un workout individual a Supabase
+ * Se llama automáticamente después de guardar localmente
+ */
+export async function autoSyncWorkout(dateKey, exercises, metadata, userId = 'default-user') {
+  if (!supabaseClient || !autoSyncEnabled) return;
+  
+  try {
+    const { error } = await supabaseClient
+      .from('workouts')
+      .upsert({
+        user_id: userId,
+        date: dateKey,
+        exercises,
+        metadata: metadata || {},
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,date'
+      });
+
+    if (error) {
+      console.error('Error auto-syncing workout:', error);
+    } else {
+      console.log(`✅ Auto-synced workout for ${dateKey}`);
+    }
+  } catch (error) {
+    console.error('Error in auto-sync:', error);
+  }
+}
+
+/**
+ * AUTO-SYNC: Sube un feeling a Supabase
+ */
+export async function autoSyncFeeling(dateKey, feeling, userId = 'default-user') {
+  if (!supabaseClient || !autoSyncEnabled) return;
+  
+  try {
+    const { error } = await supabaseClient
+      .from('feelings')
+      .upsert({
+        user_id: userId,
+        date: dateKey,
+        energy: feeling.energy,
+        sleep: feeling.sleep,
+        motivation: feeling.motivation
+      }, {
+        onConflict: 'user_id,date'
+      });
+
+    if (error) {
+      console.error('Error auto-syncing feeling:', error);
+    } else {
+      console.log(`✅ Auto-synced feeling for ${dateKey}`);
+    }
+  } catch (error) {
+    console.error('Error in auto-sync feeling:', error);
+  }
+}
+
+/**
+ * AUTO-SYNC: Sube nutrition a Supabase
+ */
+export async function autoSyncNutrition(dateKey, nutrition, userId = 'default-user') {
+  if (!supabaseClient || !autoSyncEnabled) return;
+  
+  try {
+    const { error } = await supabaseClient
+      .from('nutrition')
+      .upsert({
+        user_id: userId,
+        date: dateKey,
+        protein: nutrition.protein || 0,
+        carbs: nutrition.carbs || 0,
+        fats: nutrition.fats || 0,
+        water: nutrition.water || 0,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,date'
+      });
+
+    if (error) {
+      console.error('Error auto-syncing nutrition:', error);
+    } else {
+      console.log(`✅ Auto-synced nutrition for ${dateKey}`);
+    }
+  } catch (error) {
+    console.error('Error in auto-sync nutrition:', error);
+  }
+}
+
+/**
+ * AUTO-LOAD: Carga datos desde Supabase al iniciar
+ * Se llama automáticamente cuando la app arranca
+ */
+export async function autoLoadFromSupabase(userId = 'default-user') {
+  if (!supabaseClient) return null;
+
+  const data = {
+    workoutLogs: {},
+    workoutMetadata: {},
+    feelings: {},
+    nutrition: {}
+  };
+
+  try {
+    // Load workouts
+    const { data: workouts, error: workoutsError } = await supabaseClient
+      .from('workouts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (!workoutsError && workouts) {
+      workouts.forEach(workout => {
+        data.workoutLogs[workout.date] = workout.exercises;
+        if (workout.metadata) {
+          data.workoutMetadata[workout.date] = workout.metadata;
+        }
+      });
+      console.log(`✅ Auto-loaded ${workouts.length} workouts from Supabase`);
+    }
+
+    // Load feelings
+    const { data: feelings, error: feelingsError } = await supabaseClient
+      .from('feelings')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (!feelingsError && feelings) {
+      feelings.forEach(feeling => {
+        data.feelings[feeling.date] = {
+          energy: feeling.energy,
+          sleep: feeling.sleep,
+          motivation: feeling.motivation,
+          date: feeling.created_at
+        };
+      });
+      console.log(`✅ Auto-loaded ${feelings.length} feelings from Supabase`);
+    }
+
+    // Load nutrition
+    const { data: nutrition, error: nutritionError } = await supabaseClient
+      .from('nutrition')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false });
+
+    if (!nutritionError && nutrition) {
+      nutrition.forEach(n => {
+        data.nutrition[n.date] = {
+          protein: n.protein,
+          carbs: n.carbs,
+          fats: n.fats,
+          water: n.water
+        };
+      });
+      console.log(`✅ Auto-loaded ${nutrition.length} nutrition logs from Supabase`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error auto-loading from Supabase:', error);
+    return null;
+  }
+}
+
+/**
+ * MANUAL SYNC: Sync completo de todos los datos (para botón manual si se desea)
  */
 export async function syncToSupabase(localData, userId = 'default-user') {
   if (!supabaseClient) {
@@ -247,91 +375,8 @@ export async function syncToSupabase(localData, userId = 'default-user') {
 }
 
 /**
- * Load data from Supabase
+ * Load data from Supabase (manual)
  */
 export async function loadFromSupabase(userId = 'default-user') {
-  if (!supabaseClient) {
-    throw new Error('Supabase no está configurado');
-  }
-
-  const data = {
-    workoutLogs: {},
-    workoutMetadata: {},
-    feelings: {},
-    nutrition: {}
-  };
-
-  // Load workouts
-  const { data: workouts, error: workoutsError } = await supabaseClient
-    .from('workouts')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false });
-
-  if (!workoutsError && workouts) {
-    workouts.forEach(workout => {
-      data.workoutLogs[workout.date] = workout.exercises;
-      if (workout.metadata) {
-        data.workoutMetadata[workout.date] = workout.metadata;
-      }
-    });
-  }
-
-  // Load feelings
-  const { data: feelings, error: feelingsError } = await supabaseClient
-    .from('feelings')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false });
-
-  if (!feelingsError && feelings) {
-    feelings.forEach(feeling => {
-      data.feelings[feeling.date] = {
-        energy: feeling.energy,
-        sleep: feeling.sleep,
-        motivation: feeling.motivation,
-        date: feeling.created_at
-      };
-    });
-  }
-
-  // Load nutrition
-  const { data: nutrition, error: nutritionError } = await supabaseClient
-    .from('nutrition')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false });
-
-  if (!nutritionError && nutrition) {
-    nutrition.forEach(n => {
-      data.nutrition[n.date] = {
-        protein: n.protein,
-        carbs: n.carbs,
-        fats: n.fats,
-        water: n.water
-      };
-    });
-  }
-
-  return data;
-}
-
-/**
- * Auto-sync: Guarda en local Y en Supabase
- */
-export async function saveWithSync(key, value, userId = 'default-user') {
-  // Guardar en local primero
-  await window.storage.set(key, JSON.stringify(value));
-
-  // Si Supabase está configurado, sync automático
-  if (supabaseClient) {
-    try {
-      // Determinar qué tipo de dato es y hacer upsert
-      // Esto se puede mejorar según el key
-      console.log('Auto-sync a Supabase habilitado para', key);
-    } catch (error) {
-      console.error('Error en auto-sync:', error);
-      // No falla la operación si el sync falla
-    }
-  }
+  return autoLoadFromSupabase(userId);
 }

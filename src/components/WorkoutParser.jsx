@@ -14,14 +14,6 @@ export default function WorkoutParser({ onSuccess, onClose }) {
     const [autoDetectedDate, setAutoDetectedDate] = useState(null);
 
     const handleParse = async () => {
-        const parsed = parseMotraWorkout(inputText);
-        if (parsed.date) {
-            const detectedDate = parseDateFromMotra(parsed.date);
-            if (detectedDate) {
-                setAutoDetectedDate(detectedDate);
-                setSelectedDate(detectedDate);
-            }
-        }
         if (!inputText.trim()) {
             setStatus('error');
             setMessage('Por favor pega el texto de tu entrenamiento');
@@ -39,6 +31,7 @@ export default function WorkoutParser({ onSuccess, onClose }) {
                 return;
             }
 
+            const parsed = parseMotraWorkout(inputText);
 
             if (parsed.exercises.length === 0) {
                 setStatus('error');
@@ -94,7 +87,7 @@ export default function WorkoutParser({ onSuccess, onClose }) {
                 ...newFormat
             };
 
-            // Save
+            // Save (esto también hace auto-sync a Supabase)
             await saveWorkoutLogs(mergedLogs);
 
             // Save metadata
@@ -102,7 +95,7 @@ export default function WorkoutParser({ onSuccess, onClose }) {
             await saveWorkoutMetadata(selectedDate, metadata);
 
             setStatus('success');
-            setMessage(`✅ ¡Entrenamiento guardado en ${formatDate(selectedDate)}!`);
+            setMessage(`✅ ¡Entrenamiento guardado en ${formatDateDisplay(selectedDate)}!`);
 
             setTimeout(() => {
                 onSuccess && onSuccess(mergedLogs);
@@ -128,37 +121,6 @@ export default function WorkoutParser({ onSuccess, onClose }) {
         }
     };
 
-    const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleDateString('es-ES', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    };
-
-    const parseDateFromMotra = (dateText) => {
-        // Example: "11 feb 2026, 18:36" or "11 feb 2026"
-        try {
-            const match = dateText.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
-            if (!match) return null;
-
-            const [_, day, month, year] = match;
-            const monthMap = {
-                'ene': 0, 'feb': 1, 'mar': 2, 'abr': 3, 'may': 4, 'jun': 5,
-                'jul': 6, 'ago': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dic': 11
-            };
-
-            const monthNum = monthMap[month.toLowerCase()];
-            if (monthNum === undefined) return null;
-
-            const date = new Date(parseInt(year), monthNum, parseInt(day));
-            return date.toISOString().split('T')[0];
-        } catch (error) {
-            return null;
-        }
-    };
-
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
             <button
@@ -169,40 +131,42 @@ export default function WorkoutParser({ onSuccess, onClose }) {
             </button>
 
             <div className="max-w-2xl mx-auto">
-                <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-2xl mb-6">
-                    <div className="flex items-center gap-3 mb-2">
+                {/* Header */}
+                <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
                         <Upload className="w-8 h-8" />
-                        <h1 className="text-2xl font-bold">Importar entrenamiento</h1>
-                    </div>
-                    <p className="text-blue-100 text-sm">
-                        Pega el texto de tu entrenamiento desde Motra
+                        Importar desde Motra
+                    </h1>
+                    <p className="text-gray-400">
+                        Copia el entrenamiento desde Motra y pégalo aquí
                     </p>
                 </div>
 
                 {/* Instructions */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
-                    <h3 className="font-semibold mb-2 flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-blue-400" />
-                        Cómo funciona:
-                    </h3>
-                    <ol className="text-sm text-gray-300 space-y-1 ml-6 list-decimal">
-                        <li>Abre tu entrenamiento en Motra</li>
-                        <li>Toca "Compartir" y copia el texto completo</li>
-                        <li>Pégalo aquí abajo</li>
-                        <li>Verifica la fecha y guarda</li>
+                <div className="bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 mb-6 text-sm">
+                    <p className="font-semibold mb-2 text-blue-300">📱 Cómo importar desde Motra:</p>
+                    <ol className="list-decimal ml-4 space-y-1 text-gray-300">
+                        <li>Abre Motra y ve a tu entrenamiento</li>
+                        <li>Toca el botón de compartir (🔗)</li>
+                        <li>Selecciona "Copiar al portapapeles"</li>
+                        <li>Vuelve aquí y toca "Pegar del portapapeles"</li>
+                        <li>Revisa y guarda</li>
                     </ol>
                 </div>
 
                 {/* Input area */}
                 <div className="bg-slate-800 rounded-2xl p-4 mb-4">
+                    <label className="block text-sm text-gray-400 mb-2">
+                        Texto de Motra:
+                    </label>
                     <textarea
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
-                        placeholder="Pega aquí tu entrenamiento...&#10;&#10;Ejemplo:&#10;Mi entrenamiento:&#10;Miércoles Noche Piernas...&#10;11 feb 2026, 18:36&#10;DURACIÓN: 1h 16m&#10;Sentadilla con Barra&#10;1: 12 repeticiones x 45 kg&#10;..."
-                        className="w-full h-64 bg-slate-900 text-white rounded-xl p-4 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                        placeholder="Pega aquí el texto completo de tu entrenamiento..."
+                        className="w-full bg-slate-900 text-white rounded-xl p-4 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm h-40"
                     />
 
-                    <div className="flex gap-3 mt-4">
+                    <div className="flex gap-3 mt-3">
                         <button
                             onClick={handlePaste}
                             className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all"
@@ -260,7 +224,7 @@ export default function WorkoutParser({ onSuccess, onClose }) {
                             {autoDetectedDate && (
                                 <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-3 mb-3 text-sm">
                                     <p className="text-blue-300">
-                                        📅 Fecha detectada: <strong>{formatDate(autoDetectedDate)}</strong>
+                                        📅 Fecha detectada: <strong>{formatDateDisplay(autoDetectedDate)}</strong>
                                     </p>
                                 </div>
                             )}
@@ -273,11 +237,11 @@ export default function WorkoutParser({ onSuccess, onClose }) {
                                     type="date"
                                     value={selectedDate}
                                     onChange={(e) => setSelectedDate(e.target.value)}
-                                    max={new Date().toISOString().split('T')[0]}
+                                    max={getTodayDateKey()}
                                     className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                                 <p className="text-xs text-gray-500">
-                                    Por defecto: {formatDate(selectedDate)}
+                                    Seleccionado: {formatDateDisplay(selectedDate)}
                                 </p>
                             </div>
                         </div>
@@ -366,6 +330,11 @@ export default function WorkoutParser({ onSuccess, onClose }) {
                                     '✅ Guardar entrenamiento'
                                 )}
                             </button>
+                        </div>
+
+                        <div className="bg-green-500/10 border border-green-500/50 rounded-xl p-3 text-xs text-gray-300">
+                            <p className="text-green-400 font-semibold mb-1">🚀 Auto-sync activado</p>
+                            <p>Al guardar, el entrenamiento se subirá automáticamente a Supabase si está configurado.</p>
                         </div>
                     </div>
                 )}

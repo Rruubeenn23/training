@@ -1,6 +1,8 @@
 /**
- * Helper functions para manejo de storage
+ * Helper functions para manejo de storage con AUTO-SYNC a Supabase
  */
+
+import { autoSyncWorkout, autoSyncFeeling, autoSyncNutrition } from './database';
 
 const STORAGE_KEYS = {
   WORKOUT_LOGS: 'workout-logs',
@@ -25,14 +27,55 @@ export async function getWorkoutLogs() {
 }
 
 /**
- * Save workout logs
+ * Save workout logs - CON AUTO-SYNC
  */
 export async function saveWorkoutLogs(logs) {
   try {
+    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.WORKOUT_LOGS, JSON.stringify(logs));
+    
+    // Auto-sync: Sincronizar CADA workout modificado a Supabase
+    // Esto asegura que cualquier cambio se suba automáticamente
+    const metadata = await getWorkoutMetadata();
+    for (const [dateKey, exercises] of Object.entries(logs)) {
+      if (Object.keys(exercises).length > 0) {
+        // Sync en background sin esperar
+        autoSyncWorkout(dateKey, exercises, metadata[dateKey]);
+      }
+    }
+    
     return true;
   } catch (error) {
     console.error('Error saving workout logs:', error);
+    return false;
+  }
+}
+
+/**
+ * Save single workout for a specific date - CON AUTO-SYNC
+ */
+export async function saveWorkoutForDate(dateKey, exercises, metadata = null) {
+  try {
+    // Obtener logs existentes
+    const allLogs = await getWorkoutLogs();
+    
+    // Actualizar el día específico
+    allLogs[dateKey] = exercises;
+    
+    // Guardar localmente
+    await window.storage.set(STORAGE_KEYS.WORKOUT_LOGS, JSON.stringify(allLogs));
+    
+    // Guardar metadata si se proporciona
+    if (metadata) {
+      await saveWorkoutMetadata(dateKey, metadata);
+    }
+    
+    // Auto-sync INMEDIATO para este workout
+    await autoSyncWorkout(dateKey, exercises, metadata);
+    
+    return true;
+  } catch (error) {
+    console.error('Error saving workout for date:', error);
     return false;
   }
 }
@@ -51,13 +94,16 @@ export async function getWorkoutMetadata() {
 }
 
 /**
- * Save workout metadata
+ * Save workout metadata - CON AUTO-SYNC
  */
 export async function saveWorkoutMetadata(dateKey, metadata) {
   try {
     const allMetadata = await getWorkoutMetadata();
     allMetadata[dateKey] = metadata;
     await window.storage.set(STORAGE_KEYS.WORKOUT_METADATA, JSON.stringify(allMetadata));
+    
+    // El metadata se sube junto con el workout en autoSyncWorkout
+    
     return true;
   } catch (error) {
     console.error('Error saving workout metadata:', error);
@@ -79,13 +125,19 @@ export async function getDailyFeelings() {
 }
 
 /**
- * Save daily feeling
+ * Save daily feeling - CON AUTO-SYNC
  */
 export async function saveDailyFeeling(dateKey, feeling) {
   try {
     const allFeelings = await getDailyFeelings();
     allFeelings[dateKey] = feeling;
+    
+    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.FEELINGS, JSON.stringify(allFeelings));
+    
+    // Auto-sync INMEDIATO
+    await autoSyncFeeling(dateKey, feeling);
+    
     return true;
   } catch (error) {
     console.error('Error saving feeling:', error);
@@ -107,13 +159,19 @@ export async function getNutritionLogs() {
 }
 
 /**
- * Save nutrition log
+ * Save nutrition log - CON AUTO-SYNC
  */
 export async function saveNutritionLog(dateKey, nutritionData) {
   try {
     const allNutrition = await getNutritionLogs();
     allNutrition[dateKey] = nutritionData;
+    
+    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.NUTRITION, JSON.stringify(allNutrition));
+    
+    // Auto-sync INMEDIATO
+    await autoSyncNutrition(dateKey, nutritionData);
+    
     return true;
   } catch (error) {
     console.error('Error saving nutrition:', error);
@@ -142,9 +200,27 @@ export async function saveProgressPhoto(photoData) {
     const allPhotos = await getProgressPhotos();
     allPhotos.push(photoData);
     await window.storage.set(STORAGE_KEYS.PHOTOS, JSON.stringify(allPhotos));
+    
+    // TODO: Implementar sync de fotos a Supabase Storage si se desea
+    
     return true;
   } catch (error) {
     console.error('Error saving photo:', error);
+    return false;
+  }
+}
+
+/**
+ * Delete progress photo
+ */
+export async function deleteProgressPhoto(photoId) {
+  try {
+    const allPhotos = await getProgressPhotos();
+    const updatedPhotos = allPhotos.filter(p => p.id !== photoId);
+    await window.storage.set(STORAGE_KEYS.PHOTOS, JSON.stringify(updatedPhotos));
+    return true;
+  } catch (error) {
+    console.error('Error deleting photo:', error);
     return false;
   }
 }
@@ -181,8 +257,53 @@ function getDefaultSettings() {
     notifications: true,
     apiKey: '',
     proteinGoal: 170,
-    calorieGoal: 2200
+    calorieGoal: 2200,
+    supabaseUrl: '',
+    supabaseKey: ''
   };
+}
+
+/**
+ * Merge datos de Supabase con datos locales
+ * Se usa al iniciar la app
+ */
+export async function mergeSupabaseData(supabaseData) {
+  try {
+    if (!supabaseData) return false;
+    
+    // Merge workouts
+    if (supabaseData.workoutLogs && Object.keys(supabaseData.workoutLogs).length > 0) {
+      const localLogs = await getWorkoutLogs();
+      const merged = { ...localLogs, ...supabaseData.workoutLogs };
+      await window.storage.set(STORAGE_KEYS.WORKOUT_LOGS, JSON.stringify(merged));
+    }
+    
+    // Merge metadata
+    if (supabaseData.workoutMetadata && Object.keys(supabaseData.workoutMetadata).length > 0) {
+      const localMeta = await getWorkoutMetadata();
+      const merged = { ...localMeta, ...supabaseData.workoutMetadata };
+      await window.storage.set(STORAGE_KEYS.WORKOUT_METADATA, JSON.stringify(merged));
+    }
+    
+    // Merge feelings
+    if (supabaseData.feelings && Object.keys(supabaseData.feelings).length > 0) {
+      const localFeelings = await getDailyFeelings();
+      const merged = { ...localFeelings, ...supabaseData.feelings };
+      await window.storage.set(STORAGE_KEYS.FEELINGS, JSON.stringify(merged));
+    }
+    
+    // Merge nutrition
+    if (supabaseData.nutrition && Object.keys(supabaseData.nutrition).length > 0) {
+      const localNutrition = await getNutritionLogs();
+      const merged = { ...localNutrition, ...supabaseData.nutrition };
+      await window.storage.set(STORAGE_KEYS.NUTRITION, JSON.stringify(merged));
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error merging Supabase data:', error);
+    return false;
+  }
 }
 
 /**

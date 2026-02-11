@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Dumbbell, TrendingUp, Brain, Target, ChevronRight, Activity, Moon, Zap, CheckCircle, Upload, Apple, Camera, Download, Settings as SettingsIcon, History as HistoryIcon } from 'lucide-react';
 import { getCurrentDayKey, getTodayDateKey } from './utils/dateUtils';
 
-
 // Import components
 import WorkoutParser from './components/WorkoutParser';
 import ProgressCharts from './components/ProgressCharts';
@@ -14,7 +13,8 @@ import WorkoutHistory from './components/WorkoutHistory';
 import Settings from './components/Settings';
 
 // Import utils
-import { getWorkoutLogs, saveWorkoutLogs, getDailyFeelings, saveDailyFeeling } from './utils/storageHelper';
+import { getWorkoutLogs, saveWorkoutLogs, getDailyFeelings, saveDailyFeeling, getSettings, mergeSupabaseData, saveWorkoutForDate } from './utils/storageHelper';
+import { initSupabase, autoLoadFromSupabase } from './utils/database';
 
 // Configuración de la rutina semanal
 const WEEKLY_PLAN = {
@@ -118,10 +118,50 @@ export default function App() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [workoutLog, setWorkoutLog] = useState({});
   const [todayFeeling, setTodayFeeling] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [supabaseInitialized, setSupabaseInitialized] = useState(false);
 
   useEffect(() => {
-    loadData();
+    initializeApp();
   }, []);
+
+  const initializeApp = async () => {
+    setIsLoading(true);
+    
+    try {
+      // 1. Cargar configuración de Supabase
+      const settings = await getSettings();
+      
+      // 2. Si hay configuración de Supabase, inicializarla
+      if (settings.supabaseUrl && settings.supabaseKey) {
+        const client = initSupabase(settings.supabaseUrl, settings.supabaseKey);
+        
+        if (client) {
+          setSupabaseInitialized(true);
+          console.log('✅ Supabase inicializado');
+          
+          // 3. AUTO-LOAD: Cargar datos desde Supabase
+          const supabaseData = await autoLoadFromSupabase();
+          
+          if (supabaseData) {
+            // 4. Merge con datos locales
+            await mergeSupabaseData(supabaseData);
+            console.log('✅ Datos de Supabase cargados y mergeados');
+          }
+        }
+      }
+      
+      // 5. Cargar datos locales (ya mergeados con Supabase si aplica)
+      await loadData();
+      
+    } catch (error) {
+      console.error('Error inicializando app:', error);
+      // Continuar con datos locales aunque falle Supabase
+      await loadData();
+    }
+    
+    setIsLoading(false);
+  };
 
   const loadData = async () => {
     try {
@@ -129,7 +169,7 @@ export default function App() {
       setWorkoutLog(logs);
 
       const feelings = await getDailyFeelings();
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayDateKey();
       if (feelings[today]) {
         setTodayFeeling(feelings[today]);
       }
@@ -141,24 +181,35 @@ export default function App() {
   const saveWorkoutLogData = async (newLog) => {
     setWorkoutLog(newLog);
     await saveWorkoutLogs(newLog);
-    await loadData(); // Reload to get fresh data
+    // No es necesario recargar, saveWorkoutLogs ya hace auto-sync
   };
 
   const saveTodayFeelingData = async (feeling) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDateKey();
     setTodayFeeling(feeling);
     await saveDailyFeeling(today, feeling);
-  };
-
-  const getCurrentDayKey = () => {
-    const days = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-    return days[new Date().getDay()];
+    // saveDailyFeeling ya hace auto-sync
   };
 
   const getTodayWorkout = () => {
     const dayKey = getCurrentDayKey();
     return WEEKLY_PLAN[dayKey];
   };
+
+  // Mostrar loading mientras se inicializa
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-400">Cargando datos...</p>
+          {supabaseInitialized && (
+            <p className="text-sm text-blue-400 mt-2">Sincronizando con la nube ☁️</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Render based on view
   if (view === 'parser') {
@@ -198,7 +249,7 @@ export default function App() {
   }
 
   if (view === 'settings') {
-    return <Settings onBack={() => setView('home')} />;
+    return <Settings onBack={() => setView('home')} onSupabaseConfigured={initializeApp} />;
   }
 
   // Home view
@@ -207,203 +258,250 @@ export default function App() {
     todayFeeling={todayFeeling} 
     onNavigate={setView} 
     onSelectDay={(day) => { setSelectedDay(day); setView('workout'); }}
+    supabaseConnected={supabaseInitialized}
   />;
 }
 
 // Home View Component
-function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
+function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay, supabaseConnected }) {
   const todayWorkout = getTodayWorkout();
   const dayKey = getCurrentDayKey();
-  const todayLogs = workoutLog[new Date().toISOString().split('T')[0]] || {};
+  const todayDateKey = getTodayDateKey();
+  const todayLogs = workoutLog[todayDateKey] || {};
 
   // Get recent workouts count
   const recentWorkouts = Object.keys(workoutLog).filter(date => {
-    const d = new Date(date);
+    const d = new Date(date + 'T12:00:00'); // Fix timezone
     const now = new Date();
     const diffDays = (now - d) / (1000 * 60 * 60 * 24);
     return diffDays <= 7 && Object.keys(workoutLog[date]).length > 0;
   }).length;
 
-  function getTodayWorkout() {
-    const days = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-    const dayKey = days[new Date().getDay()];
-    return WEEKLY_PLAN[dayKey];
-  }
-
-  function getCurrentDayKey() {
-    const days = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-    return days[new Date().getDay()];
-  }
+  const totalWorkouts = Object.keys(workoutLog).filter(date => 
+    Object.keys(workoutLog[date]).length > 0
+  ).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 rounded-b-3xl shadow-2xl flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">💪 Training Tracker</h1>
-          <p className="text-blue-100">Hola Rubén, ¡vamos a machacar!</p>
-        </div>
-        <button onClick={() => onNavigate('settings')} className="text-white/80 hover:text-white transition-colors">
-          <SettingsIcon className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* Import from Motra CTA */}
-      <div className="mx-4 mt-6 bg-gradient-to-r from-green-600 to-emerald-600 border-2 border-green-400 rounded-2xl p-4 shadow-lg">
-        <h3 className="font-bold mb-2 flex items-center gap-2">
-          <Upload className="w-5 h-5" />
-          ¿Entrenaste en Motra?
-        </h3>
-        <p className="text-sm text-green-100 mb-3">Importa tu entrenamiento pegando el texto</p>
-        <button 
-          onClick={() => onNavigate('parser')}
-          className="bg-white text-green-700 px-4 py-2 rounded-xl font-semibold hover:bg-green-50 transition-all w-full flex items-center justify-center gap-2"
-        >
-          <Upload className="w-4 h-4" />
-          Importar desde Motra
-        </button>
-      </div>
-
-      {/* Today's Feeling */}
-      {!todayFeeling ? (
-        <div className="mx-4 mt-6 bg-yellow-500/20 border-2 border-yellow-500 rounded-2xl p-4">
-          <h3 className="font-bold mb-2 flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            ¿Cómo te sientes hoy?
-          </h3>
-          <button 
-            onClick={() => onNavigate('feeling')}
-            className="bg-yellow-500 text-black px-4 py-2 rounded-xl font-semibold hover:bg-yellow-400 transition-all"
-          >
-            Registrar sensaciones
-          </button>
-        </div>
-      ) : (
-        <div className="mx-4 mt-6 bg-green-500/20 border-2 border-green-500 rounded-2xl p-4">
-          <h3 className="font-bold mb-3 flex items-center gap-2">
-            <CheckCircle className="w-5 h-5" />
-            Estado de hoy
-          </h3>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <Zap className="w-6 h-6 mx-auto mb-1 text-yellow-400" />
-              <div className="text-2xl font-bold">{todayFeeling.energy}</div>
-              <div className="text-xs text-gray-300">Energía</div>
-            </div>
-            <div>
-              <Moon className="w-6 h-6 mx-auto mb-1 text-blue-400" />
-              <div className="text-2xl font-bold">{todayFeeling.sleep}</div>
-              <div className="text-xs text-gray-300">Sueño</div>
-            </div>
-            <div>
-              <Target className="w-6 h-6 mx-auto mb-1 text-red-400" />
-              <div className="text-2xl font-bold">{todayFeeling.motivation}</div>
-              <div className="text-xs text-gray-300">Motivación</div>
-            </div>
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-bold">Training Tracker</h1>
+            <p className="text-gray-400 text-sm mt-1">
+              {new Date().toLocaleDateString('es-ES', { 
+                weekday: 'long', 
+                day: 'numeric', 
+                month: 'long' 
+              })}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {supabaseConnected && (
+              <div className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 px-2 py-1 rounded-full">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                Cloud
+              </div>
+            )}
+            <button
+              onClick={() => onNavigate('settings')}
+              className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl transition-all"
+            >
+              <SettingsIcon className="w-5 h-5" />
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Today's Workout */}
-      {todayWorkout && (
-        <div className="mx-4 mt-6 bg-gradient-to-br from-blue-500/20 to-purple-500/20 border-2 border-blue-500 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                {todayWorkout.emoji} {DAYS_NAMES[dayKey]}
-              </h2>
-              <p className="text-blue-200">{todayWorkout.name}</p>
-              <p className="text-sm text-gray-300">{todayWorkout.muscle}</p>
-            </div>
-            <div className="text-right">
-              <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                todayWorkout.intensity === 'Alta' ? 'bg-red-500' :
-                todayWorkout.intensity === 'Medio-Alto' ? 'bg-orange-500' :
-                todayWorkout.intensity === 'Media' ? 'bg-yellow-500' :
-                todayWorkout.intensity === 'Media-Baja' ? 'bg-green-500' :
-                'bg-slate-500'
-              }`}>
-                {todayWorkout.intensity}
+        {/* Today's feeling indicator */}
+        {todayFeeling && (
+          <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/50 rounded-2xl p-4 mb-4">
+            <p className="text-sm text-gray-300 mb-2">Tu estado hoy:</p>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-yellow-400" />
+                <span className="text-sm font-semibold">{todayFeeling.energy}/10</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Moon className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-semibold">{todayFeeling.sleep}/10</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-red-400" />
+                <span className="text-sm font-semibold">{todayFeeling.motivation}/10</span>
               </div>
             </div>
           </div>
+        )}
+      </div>
 
-          {todayWorkout.exercises.length > 0 && (
-            <button 
-              onClick={() => onSelectDay(dayKey)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              <Dumbbell className="w-5 h-5" />
-              {Object.keys(todayLogs).length > 0 ? 'Continuar entrenamiento' : 'Empezar entrenamiento'}
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          )}
+      {/* Today's workout */}
+      <div className="mb-6 bg-gradient-to-br from-blue-600 to-purple-600 rounded-3xl p-6 shadow-xl">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-sm text-blue-100 mb-1">Entrenamiento de hoy</p>
+            <h2 className="text-2xl font-bold mb-1">
+              {todayWorkout.emoji} {todayWorkout.name}
+            </h2>
+            <p className="text-blue-100">{todayWorkout.muscle}</p>
+          </div>
+          <div className="bg-white/20 px-3 py-1 rounded-full text-sm font-semibold">
+            {todayWorkout.intensity}
+          </div>
         </div>
-      )}
 
-      {/* Main Features Grid */}
-      <div className="grid grid-cols-2 gap-4 mx-4 mt-6">
-        <button 
-          onClick={() => onNavigate('charts')}
-          className="bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 p-4 rounded-2xl transition-all shadow-lg"
-        >
-          <TrendingUp className="w-8 h-8 mx-auto mb-2 text-white" />
-          <div className="font-semibold">Gráficas</div>
-          <div className="text-xs text-green-200">Progreso</div>
-        </button>
+        {Object.keys(todayLogs).length > 0 && (
+          <div className="bg-white/10 rounded-xl p-3 mb-4">
+            <p className="text-sm text-white/90 mb-2">
+              ✅ {Object.keys(todayLogs).length} ejercicio{Object.keys(todayLogs).length !== 1 ? 's' : ''} registrado{Object.keys(todayLogs).length !== 1 ? 's' : ''}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {Object.keys(todayLogs).slice(0, 3).map((ex, idx) => (
+                <span key={idx} className="text-xs bg-white/20 px-2 py-1 rounded-full">
+                  {ex}
+                </span>
+              ))}
+              {Object.keys(todayLogs).length > 3 && (
+                <span className="text-xs bg-white/20 px-2 py-1 rounded-full">
+                  +{Object.keys(todayLogs).length - 3} más
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
-        <button 
-          onClick={() => onNavigate('ai')}
-          className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 p-4 rounded-2xl transition-all shadow-lg"
+        <button
+          onClick={() => onSelectDay(dayKey)}
+          className="w-full bg-white text-blue-600 font-bold py-3 rounded-xl hover:bg-blue-50 transition-all flex items-center justify-center gap-2"
         >
-          <Brain className="w-8 h-8 mx-auto mb-2 text-white" />
-          <div className="font-semibold">Coach IA</div>
-          <div className="text-xs text-purple-200">Consulta</div>
-        </button>
-
-        <button 
-          onClick={() => onNavigate('photos')}
-          className="bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 p-4 rounded-2xl transition-all shadow-lg"
-        >
-          <Camera className="w-8 h-8 mx-auto mb-2 text-white" />
-          <div className="font-semibold">Fotos</div>
-          <div className="text-xs text-blue-200">Progreso</div>
+          <Dumbbell className="w-5 h-5" />
+          {Object.keys(todayLogs).length > 0 ? 'Continuar entrenamiento' : 'Empezar entrenamiento'}
         </button>
       </div>
 
-      {/* Secondary actions */}
-      <div className="grid grid-cols-3 gap-3 mx-4 mt-4">
-        <button 
+      {/* Weekly plan */}
+      <div className="mb-6">
+        <h3 className="text-lg font-bold mb-3">Plan Semanal</h3>
+        <div className="grid grid-cols-7 gap-2">
+          {DAYS_ORDER.map((day) => {
+            const workout = WEEKLY_PLAN[day];
+            const isToday = day === dayKey;
+            
+            return (
+              <button
+                key={day}
+                onClick={() => onSelectDay(day)}
+                className={`aspect-square rounded-xl flex flex-col items-center justify-center p-1 transition-all ${
+                  isToday 
+                    ? 'bg-blue-600 ring-2 ring-blue-400 scale-105' 
+                    : 'bg-slate-800 hover:bg-slate-700'
+                }`}
+              >
+                <div className="text-xl mb-1">{workout.emoji}</div>
+                <div className="text-[10px] text-center leading-tight">
+                  {DAYS_NAMES[day].substring(0, 3)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Quick actions grid */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <button
+          onClick={() => onNavigate('feeling')}
+          className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-2xl p-4 transition-all text-left"
+        >
+          <Activity className="w-8 h-8 mb-2" />
+          <div className="font-bold">Sensaciones</div>
+          <div className="text-xs text-purple-100">Registra cómo te sientes</div>
+        </button>
+
+        <button
           onClick={() => onNavigate('calendar')}
-          className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
+          className="bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-2xl p-4 transition-all text-left"
         >
-          <Calendar className="w-7 h-7 mx-auto mb-2 text-blue-400" />
-          <div className="font-semibold text-sm">Calendario</div>
+          <Calendar className="w-8 h-8 mb-2" />
+          <div className="font-bold">Calendario</div>
+          <div className="text-xs text-green-100">Vista mensual</div>
         </button>
 
-        <button 
+        <button
+          onClick={() => onNavigate('charts')}
+          className="bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 rounded-2xl p-4 transition-all text-left"
+        >
+          <TrendingUp className="w-8 h-8 mb-2" />
+          <div className="font-bold">Progreso</div>
+          <div className="text-xs text-blue-100">Gráficas y stats</div>
+        </button>
+
+        <button
+          onClick={() => onNavigate('ai')}
+          className="bg-gradient-to-br from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 rounded-2xl p-4 transition-all text-left"
+        >
+          <Brain className="w-8 h-8 mb-2" />
+          <div className="font-bold">Coach IA</div>
+          <div className="text-xs text-orange-100">Análisis y consejos</div>
+        </button>
+      </div>
+
+      {/* More actions */}
+      <div className="space-y-3 mb-6">
+        <button
+          onClick={() => onNavigate('parser')}
+          className="w-full bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 transition-all flex items-center gap-3"
+        >
+          <Upload className="w-6 h-6 text-blue-400" />
+          <div className="flex-1 text-left">
+            <div className="font-semibold">Importar desde Motra</div>
+            <div className="text-xs text-gray-400">Copia y pega tu entrenamiento</div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        </button>
+
+        <button
           onClick={() => onNavigate('history')}
-          className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
+          className="w-full bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 transition-all flex items-center gap-3"
         >
-          <HistoryIcon className="w-7 h-7 mx-auto mb-2 text-purple-400" />
-          <div className="font-semibold text-sm">Historial</div>
+          <HistoryIcon className="w-6 h-6 text-purple-400" />
+          <div className="flex-1 text-left">
+            <div className="font-semibold">Historial</div>
+            <div className="text-xs text-gray-400">Todos tus entrenamientos</div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
         </button>
 
-        <button 
-          onClick={() => onNavigate('export')}
-          className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
+        <button
+          onClick={() => onNavigate('photos')}
+          className="w-full bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 transition-all flex items-center gap-3"
         >
-          <Download className="w-7 h-7 mx-auto mb-2 text-green-400" />
-          <div className="font-semibold text-sm">Exportar</div>
+          <Camera className="w-6 h-6 text-green-400" />
+          <div className="flex-1 text-left">
+            <div className="font-semibold">Fotos de progreso</div>
+            <div className="text-xs text-gray-400">Compara tu evolución</div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        </button>
+
+        <button
+          onClick={() => onNavigate('export')}
+          className="w-full bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 transition-all flex items-center gap-3"
+        >
+          <Download className="w-6 h-6 text-orange-400" />
+          <div className="flex-1 text-left">
+            <div className="font-semibold">Exportar / Importar</div>
+            <div className="text-xs text-gray-400">Backup de tus datos</div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
         </button>
       </div>
 
       {/* Stats */}
-      <div className="mx-4 mt-6 bg-slate-800 rounded-2xl p-4">
-        <h3 className="font-bold mb-3">📊 Resumen</h3>
-        <div className="grid grid-cols-3 gap-4 text-center">
+      <div className="bg-slate-800 rounded-2xl p-4">
+        <h3 className="font-bold mb-3 text-sm text-gray-400">ESTADÍSTICAS</h3>
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <div className="text-2xl font-bold text-blue-400">{Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length}</div>
+            <div className="text-2xl font-bold text-blue-400">{totalWorkouts}</div>
             <div className="text-xs text-gray-400">Total</div>
           </div>
           <div>
@@ -422,7 +520,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
   );
 }
 
-// Feeling View Component (sin cambios)
+// Feeling View Component
 function FeelingView({ onSave, onBack }) {
   const [energy, setEnergy] = useState(5);
   const [sleep, setSleep] = useState(5);
@@ -501,13 +599,13 @@ function FeelingView({ onSave, onBack }) {
   );
 }
 
-// Workout View Component (sin cambios)
+// Workout View Component
 function WorkoutView({ day, workoutLog, onSave, onBack }) {
   const workout = WEEKLY_PLAN[day];
-  const dateKey = new Date().toISOString().split('T')[0];
+  const dateKey = getTodayDateKey();
   const [localLog, setLocalLog] = useState(workoutLog[dateKey] || {});
 
-  const handleExerciseLog = (exerciseName, setIndex, weight, reps) => {
+  const handleExerciseLog = async (exerciseName, setIndex, weight, reps) => {
     const newLog = {
       ...localLog,
       [exerciseName]: {
@@ -521,7 +619,9 @@ function WorkoutView({ day, workoutLog, onSave, onBack }) {
       ...workoutLog,
       [dateKey]: newLog
     };
-    onSave(newWorkoutLog);
+    
+    // Guardar con auto-sync
+    await onSave(newWorkoutLog);
   };
 
   if (!workout) return null;
@@ -591,41 +691,7 @@ function WorkoutView({ day, workoutLog, onSave, onBack }) {
   );
 }
 
-// Settings View Component (sin cambios)
-// function SettingsView({ onBack }) {
-//   return (
-//     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-//       <button onClick={onBack} className="mb-6 text-blue-400 hover:text-blue-300">
-//         ← Volver
-//       </button>
-
-//       <h1 className="text-3xl font-bold mb-8">⚙️ Configuración</h1>
-
-//       <div className="bg-slate-800 rounded-2xl p-6">
-//         <h3 className="font-bold mb-4">Acerca de</h3>
-//         <div className="space-y-2 text-sm text-gray-300">
-//           <p><strong>Versión:</strong> 2.0.0</p>
-//           <p><strong>Desarrollado para:</strong> Rubén</p>
-//           <p className="pt-4 text-gray-400">
-//             Training Tracker - App profesional de seguimiento de entrenamientos con IA, gráficas, nutrición y más.
-//           </p>
-//         </div>
-//       </div>
-
-//       <div className="mt-6 bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 text-sm text-gray-300">
-//         <p className="font-semibold mb-2">💡 Características:</p>
-//         <ul className="space-y-1 ml-4 list-disc">
-//           <li>Importación desde Motra con selección de fecha</li>
-//           <li>Calendario mejorado con visualización de entrenamientos</li>
-//           <li>Historial completo con búsqueda y filtros</li>
-//           <li>Gráficas de progreso interactivas</li>
-//           <li>Coach IA personalizado</li>
-//           <li>Tracking de nutrición</li>
-//           <li>Fotos de progreso con comparación</li>
-//           <li>Exportar/Importar datos</li>
-//           <li>PWA instalable en iPhone</li>
-//         </ul>
-//       </div>
-//     </div>
-//   );
-// }
+function getTodayWorkout() {
+  const dayKey = getCurrentDayKey();
+  return WEEKLY_PLAN[dayKey];
+}

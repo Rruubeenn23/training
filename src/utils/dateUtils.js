@@ -55,6 +55,7 @@ export function getTodayFullInfo() {
  * CRÍTICO: Añade T12:00:00 para forzar mediodía hora local
  */
 export function dateKeyToDate(dateKey) {
+  // Forzar hora 12:00 local para evitar problemas de timezone
   return new Date(dateKey + 'T12:00:00');
 }
 
@@ -83,6 +84,10 @@ export function getDayNameFromDateKey(dateKey) {
 /**
  * Parse fecha de Motra a formato YYYY-MM-DD CORRECTO
  * Ejemplo: "11 feb 2026, 18:36" → "2026-02-11"
+ * 
+ * SOLUCIÓN AL BUG:
+ * - NO usar new Date() constructor que causa problemas de UTC
+ * - Construir el string YYYY-MM-DD directamente
  */
 export function parseDateFromMotra(dateText) {
   try {
@@ -94,21 +99,19 @@ export function parseDateFromMotra(dateText) {
     
     // Mapa de meses en español (3 letras)
     const monthMap = {
-      'ene': 0, 'feb': 1, 'mar': 2, 'abr': 3, 'may': 4, 'jun': 5,
-      'jul': 6, 'ago': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dic': 11
+      'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 
+      'may': '05', 'jun': '06', 'jul': '07', 'ago': '08', 
+      'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12'
     };
 
-    const monthNum = monthMap[monthStr.toLowerCase()];
-    if (monthNum === undefined) return null;
+    const month = monthMap[monthStr.toLowerCase()];
+    if (!month) return null;
 
-    const day = parseInt(dayStr);
-    const year = parseInt(yearStr);
+    const day = dayStr.padStart(2, '0');
+    const year = yearStr;
     
-    // Crear dateKey directamente SIN usar Date object
-    const month = String(monthNum + 1).padStart(2, '0');
-    const dayPadded = String(day).padStart(2, '0');
-    
-    return `${year}-${month}-${dayPadded}`;
+    // Construir string directamente sin usar Date object
+    return `${year}-${month}-${day}`;
   } catch (error) {
     console.error('Error parsing date from Motra:', error);
     return null;
@@ -161,4 +164,30 @@ export function compareDateKeys(dateKey1, dateKey2) {
   if (dateKey1 < dateKey2) return -1;
   if (dateKey1 > dateKey2) return 1;
   return 0;
+}
+
+/**
+ * Convierte un Date object a dateKey (YYYY-MM-DD)
+ * Usa la fecha LOCAL del usuario
+ */
+export function dateToDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Obtiene el dateKey del primer día del mes dado
+ */
+export function getFirstDayOfMonth(year, month) {
+  const monthStr = String(month).padStart(2, '0');
+  return `${year}-${monthStr}-01`;
+}
+
+/**
+ * Obtiene el número de días en un mes
+ */
+export function getDaysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
 }
