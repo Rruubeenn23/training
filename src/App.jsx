@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Dumbbell, TrendingUp, Brain, Target, ChevronRight, Activity, Moon, Zap, CheckCircle, Upload, Apple, Camera, Download, Settings as SettingsIcon } from 'lucide-react';
+import { Calendar, Dumbbell, TrendingUp, Brain, Target, ChevronRight, Activity, Moon, Zap, CheckCircle, Upload, Apple, Camera, Download, Settings as SettingsIcon, History as HistoryIcon } from 'lucide-react';
 
 // Import components
 import WorkoutParser from './components/WorkoutParser';
@@ -8,6 +8,9 @@ import AICoach from './components/AICoach';
 import NutritionTracker from './components/NutritionTracker';
 import ProgressPhotos from './components/ProgressPhotos';
 import ExportData from './components/ExportData';
+import EnhancedCalendar from './components/EnhancedCalendar';
+import WorkoutHistory from './components/WorkoutHistory';
+import Settings from './components/Settings';
 
 // Import utils
 import { getWorkoutLogs, saveWorkoutLogs, getDailyFeelings, saveDailyFeeling } from './utils/storageHelper';
@@ -115,7 +118,6 @@ export default function App() {
   const [workoutLog, setWorkoutLog] = useState({});
   const [todayFeeling, setTodayFeeling] = useState(null);
 
-  // Cargar datos del almacenamiento
   useEffect(() => {
     loadData();
   }, []);
@@ -138,6 +140,7 @@ export default function App() {
   const saveWorkoutLogData = async (newLog) => {
     setWorkoutLog(newLog);
     await saveWorkoutLogs(newLog);
+    await loadData(); // Reload to get fresh data
   };
 
   const saveTodayFeelingData = async (feeling) => {
@@ -158,7 +161,7 @@ export default function App() {
 
   // Render based on view
   if (view === 'parser') {
-    return <WorkoutParser onSuccess={(logs) => { setWorkoutLog(logs); setView('home'); }} onClose={() => setView('home')} />;
+    return <WorkoutParser onSuccess={(logs) => { saveWorkoutLogData(logs); setView('home'); }} onClose={() => setView('home')} />;
   }
 
   if (view === 'charts') {
@@ -181,12 +184,16 @@ export default function App() {
     return <ExportData onClose={() => setView('home')} onImportSuccess={loadData} />;
   }
 
-  if (view === 'feeling') {
-    return <FeelingView onSave={saveTodayFeelingData} onBack={() => setView('home')} />;
+  if (view === 'calendar') {
+    return <EnhancedCalendar onClose={() => setView('home')} onSelectDay={(day) => { setSelectedDay(day); setView('workout'); }} />;
   }
 
-  if (view === 'calendar') {
-    return <CalendarView onSelectDay={(day) => { setSelectedDay(day); setView('workout'); }} onBack={() => setView('home')} />;
+  if (view === 'history') {
+    return <WorkoutHistory onClose={() => setView('home')} />;
+  }
+
+  if (view === 'feeling') {
+    return <FeelingView onSave={saveTodayFeelingData} onBack={() => setView('home')} />;
   }
 
   if (view === 'workout') {
@@ -194,7 +201,7 @@ export default function App() {
   }
 
   if (view === 'settings') {
-    return <SettingsView onBack={() => setView('home')} />;
+    return <Settings onBack={() => setView('home')} />;
   }
 
   // Home view
@@ -211,6 +218,14 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
   const todayWorkout = getTodayWorkout();
   const dayKey = getCurrentDayKey();
   const todayLogs = workoutLog[new Date().toISOString().split('T')[0]] || {};
+
+  // Get recent workouts count
+  const recentWorkouts = Object.keys(workoutLog).filter(date => {
+    const d = new Date(date);
+    const now = new Date();
+    const diffDays = (now - d) / (1000 * 60 * 60 * 24);
+    return diffDays <= 7 && Object.keys(workoutLog[date]).length > 0;
+  }).length;
 
   function getTodayWorkout() {
     const days = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
@@ -237,7 +252,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
       </div>
 
       {/* Import from Motra CTA */}
-      <div className="mx-4 mt-6 bg-gradient-to-r from-green-600 to-emerald-600 border-2 border-green-400 rounded-2xl p-4">
+      <div className="mx-4 mt-6 bg-gradient-to-r from-green-600 to-emerald-600 border-2 border-green-400 rounded-2xl p-4 shadow-lg">
         <h3 className="font-bold mb-2 flex items-center gap-2">
           <Upload className="w-5 h-5" />
           ¿Entrenaste en Motra?
@@ -245,9 +260,10 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
         <p className="text-sm text-green-100 mb-3">Importa tu entrenamiento pegando el texto</p>
         <button 
           onClick={() => onNavigate('parser')}
-          className="bg-white text-green-700 px-4 py-2 rounded-xl font-semibold hover:bg-green-50 transition-all w-full"
+          className="bg-white text-green-700 px-4 py-2 rounded-xl font-semibold hover:bg-green-50 transition-all w-full flex items-center justify-center gap-2"
         >
-          📥 Importar desde Motra
+          <Upload className="w-4 h-4" />
+          Importar desde Motra
         </button>
       </div>
 
@@ -332,7 +348,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
       <div className="grid grid-cols-2 gap-4 mx-4 mt-6">
         <button 
           onClick={() => onNavigate('charts')}
-          className="bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 p-4 rounded-2xl transition-all"
+          className="bg-gradient-to-br from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 p-4 rounded-2xl transition-all shadow-lg"
         >
           <TrendingUp className="w-8 h-8 mx-auto mb-2 text-white" />
           <div className="font-semibold">Gráficas</div>
@@ -341,7 +357,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
 
         <button 
           onClick={() => onNavigate('ai')}
-          className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 p-4 rounded-2xl transition-all"
+          className="bg-gradient-to-br from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 p-4 rounded-2xl transition-all shadow-lg"
         >
           <Brain className="w-8 h-8 mx-auto mb-2 text-white" />
           <div className="font-semibold">Coach IA</div>
@@ -350,7 +366,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
 
         <button 
           onClick={() => onNavigate('nutrition')}
-          className="bg-gradient-to-br from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 p-4 rounded-2xl transition-all"
+          className="bg-gradient-to-br from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 p-4 rounded-2xl transition-all shadow-lg"
         >
           <Apple className="w-8 h-8 mx-auto mb-2 text-white" />
           <div className="font-semibold">Nutrición</div>
@@ -359,7 +375,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
 
         <button 
           onClick={() => onNavigate('photos')}
-          className="bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 p-4 rounded-2xl transition-all"
+          className="bg-gradient-to-br from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 p-4 rounded-2xl transition-all shadow-lg"
         >
           <Camera className="w-8 h-8 mx-auto mb-2 text-white" />
           <div className="font-semibold">Fotos</div>
@@ -368,23 +384,29 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
       </div>
 
       {/* Secondary actions */}
-      <div className="grid grid-cols-2 gap-4 mx-4 mt-4">
+      <div className="grid grid-cols-3 gap-3 mx-4 mt-4">
         <button 
           onClick={() => onNavigate('calendar')}
           className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
         >
-          <Calendar className="w-8 h-8 mx-auto mb-2 text-blue-400" />
-          <div className="font-semibold">Calendario</div>
-          <div className="text-xs text-gray-400">Semana</div>
+          <Calendar className="w-7 h-7 mx-auto mb-2 text-blue-400" />
+          <div className="font-semibold text-sm">Calendario</div>
+        </button>
+
+        <button 
+          onClick={() => onNavigate('history')}
+          className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
+        >
+          <HistoryIcon className="w-7 h-7 mx-auto mb-2 text-purple-400" />
+          <div className="font-semibold text-sm">Historial</div>
         </button>
 
         <button 
           onClick={() => onNavigate('export')}
           className="bg-slate-700 hover:bg-slate-600 p-4 rounded-2xl transition-all"
         >
-          <Download className="w-8 h-8 mx-auto mb-2 text-green-400" />
-          <div className="font-semibold">Exportar</div>
-          <div className="text-xs text-gray-400">Backup</div>
+          <Download className="w-7 h-7 mx-auto mb-2 text-green-400" />
+          <div className="font-semibold text-sm">Exportar</div>
         </button>
       </div>
 
@@ -393,20 +415,18 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
         <h3 className="font-bold mb-3">📊 Resumen</h3>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <div className="text-2xl font-bold text-blue-400">{Object.keys(workoutLog).length}</div>
-            <div className="text-xs text-gray-400">Entrenamientos</div>
+            <div className="text-2xl font-bold text-blue-400">{Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length}</div>
+            <div className="text-xs text-gray-400">Total</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-purple-400">
-              {Object.values(workoutLog).reduce((acc, day) => acc + Object.keys(day).length, 0)}
-            </div>
-            <div className="text-xs text-gray-400">Ejercicios</div>
+            <div className="text-2xl font-bold text-purple-400">{recentWorkouts}</div>
+            <div className="text-xs text-gray-400">Esta semana</div>
           </div>
           <div>
             <div className="text-2xl font-bold text-green-400">
-              {Math.round((Object.keys(workoutLog).length / 30) * 7)}
+              {Object.values(workoutLog).reduce((acc, day) => acc + Object.keys(day).length, 0)}
             </div>
-            <div className="text-xs text-gray-400">Días activos</div>
+            <div className="text-xs text-gray-400">Ejercicios</div>
           </div>
         </div>
       </div>
@@ -414,7 +434,7 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay }) {
   );
 }
 
-// Feeling View Component
+// Feeling View Component (sin cambios)
 function FeelingView({ onSave, onBack }) {
   const [energy, setEnergy] = useState(5);
   const [sleep, setSleep] = useState(5);
@@ -493,54 +513,7 @@ function FeelingView({ onSave, onBack }) {
   );
 }
 
-// Calendar View Component
-function CalendarView({ onSelectDay, onBack }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-      <button onClick={onBack} className="mb-6 text-blue-400 hover:text-blue-300">
-        ← Volver
-      </button>
-
-      <h1 className="text-3xl font-bold mb-6">📅 Semana de entrenamiento</h1>
-
-      <div className="space-y-3">
-        {DAYS_ORDER.map(dayKey => {
-          const workout = WEEKLY_PLAN[dayKey];
-          if (!workout) return null;
-
-          return (
-            <button
-              key={dayKey}
-              onClick={() => onSelectDay(dayKey)}
-              className="w-full bg-slate-800 hover:bg-slate-700 p-4 rounded-2xl transition-all text-left"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-lg">
-                    {workout.emoji} {DAYS_NAMES[dayKey]}
-                  </div>
-                  <div className="text-sm text-gray-400">{workout.name}</div>
-                  <div className="text-xs text-gray-500">{workout.muscle}</div>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  workout.intensity === 'Alta' ? 'bg-red-500' :
-                  workout.intensity === 'Medio-Alto' ? 'bg-orange-500' :
-                  workout.intensity === 'Media' ? 'bg-yellow-500' :
-                  workout.intensity === 'Media-Baja' ? 'bg-green-500' :
-                  'bg-slate-500'
-                }`}>
-                  {workout.intensity}
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Workout View Component
+// Workout View Component (sin cambios)
 function WorkoutView({ day, workoutLog, onSave, onBack }) {
   const workout = WEEKLY_PLAN[day];
   const dateKey = new Date().toISOString().split('T')[0];
@@ -630,39 +603,41 @@ function WorkoutView({ day, workoutLog, onSave, onBack }) {
   );
 }
 
-// Settings View Component
-function SettingsView({ onBack }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-      <button onClick={onBack} className="mb-6 text-blue-400 hover:text-blue-300">
-        ← Volver
-      </button>
+// Settings View Component (sin cambios)
+// function SettingsView({ onBack }) {
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
+//       <button onClick={onBack} className="mb-6 text-blue-400 hover:text-blue-300">
+//         ← Volver
+//       </button>
 
-      <h1 className="text-3xl font-bold mb-8">⚙️ Configuración</h1>
+//       <h1 className="text-3xl font-bold mb-8">⚙️ Configuración</h1>
 
-      <div className="bg-slate-800 rounded-2xl p-6">
-        <h3 className="font-bold mb-4">Acerca de</h3>
-        <div className="space-y-2 text-sm text-gray-300">
-          <p><strong>Versión:</strong> 2.0.0</p>
-          <p><strong>Desarrollado para:</strong> Rubén</p>
-          <p className="pt-4 text-gray-400">
-            Training Tracker - App profesional de seguimiento de entrenamientos con IA, gráficas, nutrición y más.
-          </p>
-        </div>
-      </div>
+//       <div className="bg-slate-800 rounded-2xl p-6">
+//         <h3 className="font-bold mb-4">Acerca de</h3>
+//         <div className="space-y-2 text-sm text-gray-300">
+//           <p><strong>Versión:</strong> 2.0.0</p>
+//           <p><strong>Desarrollado para:</strong> Rubén</p>
+//           <p className="pt-4 text-gray-400">
+//             Training Tracker - App profesional de seguimiento de entrenamientos con IA, gráficas, nutrición y más.
+//           </p>
+//         </div>
+//       </div>
 
-      <div className="mt-6 bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 text-sm text-gray-300">
-        <p className="font-semibold mb-2">💡 Características:</p>
-        <ul className="space-y-1 ml-4 list-disc">
-          <li>Importación desde Motra</li>
-          <li>Gráficas de progreso interactivas</li>
-          <li>Coach IA personalizado</li>
-          <li>Tracking de nutrición</li>
-          <li>Fotos de progreso con comparación</li>
-          <li>Exportar/Importar datos</li>
-          <li>PWA instalable en iPhone</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
+//       <div className="mt-6 bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 text-sm text-gray-300">
+//         <p className="font-semibold mb-2">💡 Características:</p>
+//         <ul className="space-y-1 ml-4 list-disc">
+//           <li>Importación desde Motra con selección de fecha</li>
+//           <li>Calendario mejorado con visualización de entrenamientos</li>
+//           <li>Historial completo con búsqueda y filtros</li>
+//           <li>Gráficas de progreso interactivas</li>
+//           <li>Coach IA personalizado</li>
+//           <li>Tracking de nutrición</li>
+//           <li>Fotos de progreso con comparación</li>
+//           <li>Exportar/Importar datos</li>
+//           <li>PWA instalable en iPhone</li>
+//         </ul>
+//       </div>
+//     </div>
+//   );
+// }
