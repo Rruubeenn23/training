@@ -1,8 +1,165 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle } from 'lucide-react';
+import { Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle, RotateCcw } from 'lucide-react';
 import { getSettings, saveSettings, getDailyFeelings, getWorkoutMetadata } from '../utils/storageHelper';
 import { getAllExercises, getExerciseHistory } from '../utils/storageHelper';
 import { getTodayFullInfo, getTodayDateKey } from '../utils/dateUtils';
+
+// PERFIL COMPLETO DE RUBÉN - SIEMPRE INCLUIDO EN EL CONTEXTO
+const RUBEN_PROFILE = {
+  "profile": {
+    "name": "Rubén",
+    "age": 21,
+    "height_cm": 170,
+    "approx_start_weight_kg": 100,
+    "current_context": {
+      "goal": "Fat loss with muscle maintenance / recomposition",
+      "primary_focus": "Reducir volumen corporal manteniendo fuerza y músculo",
+      "aesthetic_goal": "Verme más fino y definido"
+    }
+  },
+  "medical_context": {
+    "medication": "Mounjaro (tirzepatida)",
+    "duration_months": 3,
+    "initial_progress": "≈1 kg por semana",
+    "current_status": "Estancamiento de peso las últimas 3 semanas",
+    "notes": [
+      "Reducción de apetito",
+      "Menor ingesta calórica espontánea",
+      "Posible recomposición corporal",
+      "Mayor sensibilidad a la fatiga en déficit"
+    ]
+  },
+  "weekly_schedule": {
+    "work": {
+      "morning": "08:00 - 14:00",
+      "afternoon": "15:00 - 18:00"
+    },
+    "training_window": "18:00 - 22:00",
+    "dinner_window": "22:00 - 24:00",
+    "sleep_time": "01:00",
+    "sports": {
+      "friday": "Fútbol 1h30 (alta intensidad)",
+      "sunday_optional": "Pádel 1h30"
+    }
+  },
+  "nutrition_habits": {
+    "breakfast_time": "10:00",
+    "breakfast_current": [
+      "Café",
+      "2 tostadas pan integral",
+      "Pavo en lonchas",
+      "Queso"
+    ],
+    "adjustment_strategy": [
+      "Reducir a 1 tostada en algunos días",
+      "Aumentar ligeramente proteína del desayuno sin hacerlo pesado",
+      "Mantener comida principal fuerte a las 14:00",
+      "Priorizar proteína diaria 160-180g",
+      "Carbohidratos alrededor del entreno",
+      "Evitar déficit excesivo"
+    ],
+    "protein_target_g_day": "160-180",
+    "hydration_focus": true
+  },
+  "training_structure": {
+    "split": {
+      "monday": "Empuje fuerte (Pecho + Hombro + Tríceps)",
+      "tuesday": "Tracción (Espalda + Bíceps)",
+      "wednesday": "Pierna completa",
+      "thursday": "Estímulo ligero / bomba",
+      "friday": "Fútbol",
+      "sunday_optional": "Pádel"
+    }
+  },
+  "monday_targets": {
+    "press_banca": {
+      "sets": 3,
+      "weights_kg": [55, 60, 65],
+      "rep_scheme": ["8", "6-8", "5-6"]
+    },
+    "press_inclinado_mancuernas": {
+      "weight_kg": 17.5,
+      "sets": 3,
+      "reps": "8-10"
+    },
+    "fondos": {
+      "load": "Peso corporal + 2.5-5 kg",
+      "sets": 3,
+      "reps": "6-10"
+    },
+    "press_militar": {
+      "weight_kg": 45,
+      "sets": 3,
+      "reps": "6-8"
+    }
+  },
+  "tuesday_targets": {
+    "jalon": {
+      "weights_kg": [75, 80, 80],
+      "rep_scheme": ["10", "8-10", "6-8"]
+    },
+    "remo_multipower": {
+      "weight_kg": 50,
+      "sets": 3,
+      "reps": "8-10"
+    },
+    "curl_ez": {
+      "weight_kg": 30,
+      "rep_scheme": ["8", "8", "6"]
+    }
+  },
+  "wednesday_targets": {
+    "sentadilla": {
+      "weights_kg": [70, 80, 82.5],
+      "rep_scheme": ["8", "6-8", "6"]
+    },
+    "zancadas": {
+      "weight_kg_each_hand": 17.5,
+      "sets": 2,
+      "reps": "10-12"
+    },
+    "peso_muerto_rumano": {
+      "weight_kg_range": "60-70",
+      "sets": 3,
+      "reps": "8-10"
+    }
+  },
+  "cardio_strategy": {
+    "preferred": "Boxeo técnico ligero",
+    "avoid_post_leg": "HIIT intenso o comba explosiva",
+    "weekly_structure": {
+      "monday": "Boxeo 10-15 min opcional",
+      "tuesday": "Cinta 15-20 min",
+      "wednesday": "10-15 min suave o descanso",
+      "friday": "Fútbol (cardio principal)"
+    }
+  },
+  "fatigue_observations": {
+    "accumulated_fatigue": true,
+    "hip_thrust_difficulty": "Montaje incómodo en gimnasio en casa",
+    "cardio_limitation_day3": "Fatiga en piernas y hombros",
+    "mental_factor": "Aburrimiento con cinta/bici"
+  },
+  "optimization_principles": [
+    "Reducir volumen innecesario",
+    "Priorizar tensión mecánica",
+    "Evitar fallo absoluto en déficit",
+    "Más repeticiones antes que subir peso",
+    "Minimizar fricción logística (menos cambios de mancuernas)",
+    "Mantener sostenibilidad semanal"
+  ],
+  "recovery_focus": {
+    "sleep_target_hours": 7,
+    "daily_steps_target": "8000-10000",
+    "avoid_chronic_fatigue": true
+  },
+  "overall_status": {
+    "discipline_level": "Alto",
+    "training_quality": "Buena técnica y progresión sólida",
+    "main_risk": "Acumulación de fatiga + volumen excesivo",
+    "current_phase": "Afinado para recomposición corporal"
+  }
+};
 
 export default function AICoach({ workoutLogs, onClose }) {
   const [apiKey, setApiKey] = useState('');
@@ -52,19 +209,26 @@ export default function AICoach({ workoutLogs, onClose }) {
       role: 'assistant',
       content: `¡Hola Rubén! 💪 Hoy es **${todayInfo.dayName} ${new Date().getDate()} de ${new Date().toLocaleDateString('es-ES', {month: 'long'})}**.
 
-Soy tu coach de IA. Puedo ayudarte con:
+Soy tu coach de IA personalizado. Tengo acceso completo a:
 
-• Analizar tu progreso
-• Dar recomendaciones
-• Ajustar volumen e intensidad
-• Responder dudas sobre ejercicios
+• Tu perfil, objetivos y contexto médico (Mounjaro)
+• Tus targets de peso para cada ejercicio
+• Tu progreso histórico
+• Tus sensaciones y estado actual
+• Tu rutina semanal completa
 
-¿En qué puedo ayudarte?`,
+¿En qué puedo ayudarte? Pregúntame lo que necesites sobre tu entrenamiento, nutrición o progreso.`,
       timestamp: new Date()
     }]);
   };
 
-  const buildContext = async () => {
+  const resetConversation = () => {
+    if (confirm('¿Reiniciar conversación? Se perderá el historial actual.')) {
+      addWelcomeMessage();
+    }
+  };
+
+  const buildCompleteContext = async () => {
     const todayInfo = getTodayFullInfo();
     const feelings = await getDailyFeelings();
     const metadata = await getWorkoutMetadata();
@@ -75,8 +239,8 @@ Soy tu coach de IA. Puedo ayudarte con:
     const todayHasWorkout = todayWorkout && Object.keys(todayWorkout).length > 0;
     
     const recentWorkouts = Object.entries(workoutLogs)
-      .sort(([dateA], [dateB]) => new Date(dateB) - new Date(dateA))
-      .slice(0, 5);
+      .sort(([dateA], [dateB]) => new Date(dateB + 'T12:00:00') - new Date(dateA + 'T12:00:00'))
+      .slice(0, 7);
 
     const exerciseFreq = {};
     Object.values(workoutLogs).forEach(day => {
@@ -86,7 +250,7 @@ Soy tu coach de IA. Puedo ayudarte con:
     });
     const topExercises = Object.entries(exerciseFreq)
       .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
+      .slice(0, 10)
       .map(([ex]) => ex);
 
     const progressions = {};
@@ -100,52 +264,71 @@ Soy tu coach de IA. Puedo ayudarte con:
           startWeight: first.maxWeight,
           currentWeight: last.maxWeight,
           progress: last.maxWeight - first.maxWeight,
-          current1RM: last.estimated1RM
+          current1RM: last.estimated1RM,
+          lastDate: last.date
         };
       }
     });
 
     const recentFeelings = Object.entries(feelings)
-      .sort(([dateA], [dateB]) => new Date(dateB) - new Date(dateA))
-      .slice(0, 3);
+      .sort(([dateA], [dateB]) => new Date(dateB + 'T12:00:00') - new Date(dateA + 'T12:00:00'))
+      .slice(0, 5);
 
-    return `FECHA ACTUAL: ${todayInfo.fullDate}
+    // Construir contexto completo con PERFIL PERSISTENTE
+    return `=== PERFIL COMPLETO DE RUBÉN (CONTEXTO PERMANENTE) ===
+${JSON.stringify(RUBEN_PROFILE, null, 2)}
+
+=== FECHA Y ESTADO ACTUAL ===
+FECHA ACTUAL: ${todayInfo.fullDate}
 DÍA DE LA SEMANA: ${todayInfo.dayName}
 FECHA KEY: ${todayInfo.dateKey}
 
+=== ENTRENAMIENTO DE HOY ===
 ${todayHasWorkout ? `
-ENTRENAMIENTO DE HOY (${todayInfo.dateKey}):
-${Object.entries(todayWorkout).map(([ex, sets]) => `- ${ex}: ${Object.keys(sets).length} series`).join('\n')}
-` : `
-NO HAY ENTRENAMIENTO REGISTRADO HOY (${todayInfo.dateKey})
-`}
+REGISTRADO (${todayInfo.dateKey}):
+${Object.entries(todayWorkout).map(([ex, sets]) => {
+  const setDetails = Object.entries(sets).map(([num, data]) => 
+    `  Serie ${num}: ${data.weight}kg × ${data.reps} reps`
+  ).join('\n');
+  return `${ex}:\n${setDetails}`;
+}).join('\n\n')}
+` : `NO HAY ENTRENAMIENTO REGISTRADO HOY (${todayInfo.dateKey})`}
 
-Objetivo: Recomposición corporal (definición + mantener músculo)
+=== ENTRENAMIENTOS RECIENTES (últimas ${recentWorkouts.length} sesiones) ===
+${recentWorkouts.map(([date, ex]) => {
+  const meta = metadata[date];
+  const exerciseList = Object.keys(ex).slice(0, 5).join(', ');
+  const more = Object.keys(ex).length > 5 ? ` +${Object.keys(ex).length - 5} más` : '';
+  return `${date} (${meta?.title || 'Entrenamiento'}): ${exerciseList}${more}
+  Duración: ${meta?.duration || 'N/A'} | Volumen: ${meta?.volume || 'N/A'}`;
+}).join('\n')}
 
-Rutina semanal:
-- Lunes: Empuje (Pecho/Hombro/Tríceps) - Alta
-- Martes: Tracción (Espalda/Bíceps) - Media-Alta
-- Miércoles: Pierna - Media
-- Jueves: Bomba/Recuperación - Baja
-- Viernes: Fútbol
-- Domingo: Pádel
+=== PROGRESIÓN DETALLADA (top ${Object.keys(progressions).length} ejercicios) ===
+${Object.entries(progressions).map(([ex, d]) => `
+${ex}:
+  - Peso inicial: ${d.startWeight}kg
+  - Peso actual: ${d.currentWeight}kg
+  - Progreso total: +${d.progress}kg en ${d.sessions} sesiones
+  - 1RM estimado actual: ${d.current1RM.toFixed(1)}kg
+  - Última sesión: ${d.lastDate}`).join('\n')}
 
-${recentWorkouts.length > 0 ? `
-Últimos entrenamientos:
-${recentWorkouts.slice(0, 3).map(([date, ex]) => `- ${date}: ${Object.keys(ex).length} ejercicios`).join('\n')}
-` : ''}
+=== SENSACIONES RECIENTES ===
+${recentFeelings.length > 0 ? recentFeelings.map(([date, f]) => 
+  `${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10, Motivación ${f.motivation}/10`
+).join('\n') : 'No hay sensaciones registradas'}
 
-${Object.keys(progressions).length > 0 ? `
-Progresión ejercicios principales:
-${Object.entries(progressions).slice(0, 3).map(([ex, d]) => `- ${ex}: ${d.startWeight}→${d.currentWeight}kg (+${d.progress}kg en ${d.sessions} sesiones)`).join('\n')}
-` : ''}
+=== ESTADÍSTICAS GLOBALES ===
+Total entrenamientos registrados: ${Object.keys(workoutLogs).filter(d => Object.keys(workoutLogs[d]).length > 0).length}
+Total ejercicios únicos: ${exercises.length}
+Ejercicios más frecuentes: ${topExercises.slice(0, 5).join(', ')}
 
-${recentFeelings.length > 0 ? `
-Estado reciente:
-${recentFeelings.slice(0, 1).map(([date, f]) => `- ${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10, Motivación ${f.motivation}/10`).join('\n')}
-` : ''}
-
-Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workoutLogs[d]).length > 0).length}`;
+=== IMPORTANTE ===
+- SIEMPRE usa este perfil completo para tus recomendaciones
+- Considera el contexto médico (Mounjaro) en todas tus respuestas
+- Respeta los targets de peso específicos para cada ejercicio
+- Ten en cuenta el objetivo principal: recomposición corporal
+- Recuerda las limitaciones de fatiga y los principios de optimización
+`;
   };
 
   const sendMessage = async () => {
@@ -163,11 +346,12 @@ Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workout
     setError('');
 
     try {
-      const context = await buildContext();
+      const context = await buildCompleteContext();
       let aiText = '';
 
       if (aiProvider === 'groq') {
-        aiText = await callGroqAPI(context, inputMessage);
+        // ENVIAR TODO EL HISTORIAL DE CONVERSACIÓN + CONTEXTO
+        aiText = await callGroqAPI(context, messages, inputMessage);
       }
 
       const assistantMessage = {
@@ -192,8 +376,43 @@ Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workout
     setIsLoading(false);
   };
 
-  const callGroqAPI = async (context, message) => {
+  const callGroqAPI = async (context, conversationHistory, newMessage) => {
     try {
+      // Construir el historial completo de mensajes para la API
+      const apiMessages = [
+        {
+          role: "system",
+          content: `Eres el entrenador personal de Rubén. Eres experto, directo, práctico y motivador.
+
+CONTEXTO COMPLETO (USA ESTO EN TODAS TUS RESPUESTAS):
+${context}
+
+INSTRUCCIONES:
+- Sé específico y usa datos del perfil y progreso de Rubén
+- Menciona pesos, ejercicios y sensaciones específicas cuando sea relevante
+- Considera SIEMPRE el contexto médico (Mounjaro) y objetivo de recomposición
+- Usa emojis ocasionalmente para mantener el tono motivador
+- Si no tienes datos suficientes, recomienda registrar más info
+- Sé conciso pero completo en tus respuestas`
+        }
+      ];
+
+      // Añadir TODA la conversación previa (excluyendo el mensaje de bienvenida)
+      const conversationMessages = conversationHistory
+        .slice(1) // Saltar mensaje de bienvenida
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+
+      apiMessages.push(...conversationMessages);
+
+      // Añadir el nuevo mensaje del usuario
+      apiMessages.push({
+        role: "user",
+        content: newMessage
+      });
+
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -202,38 +421,21 @@ Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workout
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: `Eres un entrenador personal experto. Sé directo, práctico y motivador. Usa emojis ocasionalmente.
-
-${context}`
-            },
-            {
-              role: "user",
-              content: message
-            }
-          ],
+          messages: apiMessages,
           temperature: 0.7,
-          max_tokens: 800
+          max_tokens: 1000
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (response.status === 401) {
-          throw new Error('API key inválida. Verifica tu key de Groq.');
-        } else if (response.status === 429) {
-          throw new Error('Límite alcanzado. Espera un momento.');
-        } else {
-          throw new Error(`Error ${response.status}: ${errorData.error?.message || 'Error desconocido'}`);
-        }
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || `Error ${response.status}`);
       }
 
       const data = await response.json();
       
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error('Respuesta inválida');
+      if (!data.choices || !data.choices[0]) {
+        throw new Error('Respuesta inválida de la API');
       }
       
       return data.choices[0].message.content;
@@ -243,10 +445,11 @@ ${context}`
   };
 
   const quickPrompts = [
-    "¿Analiza mi progreso?",
-    "¿Debería subir peso?",
-    "¿Cómo va mi sentadilla?",
-    "Dame un consejo"
+    "Analiza mi progreso general",
+    "¿Debo subir peso en press banca?",
+    "¿Cómo llevo la sentadilla?",
+    "Consejos para mi nutrición",
+    "¿Estoy progresando bien?"
   ];
 
   if (showSettings) {
@@ -268,7 +471,7 @@ ${context}`
               <Settings className="w-7 h-7" />
               Configurar IA Gratuita
             </h1>
-            <p className="text-purple-100 text-sm">Groq (Llama 3.3) - 100% gratis</p>
+            <p className="text-purple-100 text-sm">Groq (Llama 3.3) - 100% gratis con memoria</p>
           </div>
 
           {error && (
@@ -286,6 +489,8 @@ ${context}`
                 ✅ 100% GRATIS sin límites<br/>
                 ⚡ Ultra rápido (2-3s)<br/>
                 🧠 Llama 3.3 70B<br/>
+                💾 Memoria de conversación<br/>
+                🎯 Contexto completo de tu perfil<br/>
                 ❌ Sin tarjeta de crédito
               </p>
             </div>
@@ -330,6 +535,18 @@ ${context}`
               {apiKey.trim() ? '✅ Guardar y activar' : 'Ingresa una API key'}
             </button>
           </div>
+
+          <div className="bg-purple-500/10 border border-purple-500/50 rounded-xl p-4 text-sm">
+            <p className="font-semibold mb-2 text-purple-300">🎯 Tu Coach Personalizado:</p>
+            <ul className="space-y-1 text-gray-300 ml-4 list-disc">
+              <li>Tiene acceso a tu perfil completo (edad, altura, objetivos)</li>
+              <li>Conoce tu contexto médico (Mounjaro)</li>
+              <li>Sabe tus targets de peso para cada ejercicio</li>
+              <li>Analiza tu progreso histórico completo</li>
+              <li>Mantiene memoria de toda la conversación</li>
+              <li>Se reinicia solo cuando cierras y vuelves a abrir el chat</li>
+            </ul>
+          </div>
         </div>
       </div>
     );
@@ -346,22 +563,43 @@ ${context}`
           Coach IA
           <span className="text-xs bg-white/20 px-2 py-1 rounded">Groq ⚡</span>
         </h1>
-        <button 
-          onClick={() => setShowSettings(true)}
-          className="text-purple-100 hover:text-white"
-        >
-          <Settings className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-2">
+          {messages.length > 1 && (
+            <button 
+              onClick={resetConversation}
+              className="text-purple-100 hover:text-white"
+              title="Reiniciar conversación"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
+          )}
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="text-purple-100 hover:text-white"
+          >
+            <Settings className="w-6 h-6" />
+          </button>
+        </div>
       </div>
 
       {!hasApiKey ? (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center max-w-md">
             <Sparkles className="w-16 h-16 mx-auto mb-4 text-purple-400" />
-            <h2 className="text-xl font-bold mb-2">Activa tu Coach IA</h2>
-            <p className="text-gray-400 mb-6">
+            <h2 className="text-xl font-bold mb-2">Activa tu Coach IA Personalizado</h2>
+            <p className="text-gray-400 mb-4">
               Usa <strong className="text-green-400">Groq</strong> (Llama 3.3) completamente gratis
             </p>
+            <div className="bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 mb-6 text-sm text-left">
+              <p className="font-semibold mb-2 text-blue-300">🎯 Tu coach tendrá:</p>
+              <ul className="space-y-1 text-gray-300 ml-4 list-disc">
+                <li>Tu perfil completo y objetivos</li>
+                <li>Contexto médico (Mounjaro)</li>
+                <li>Targets de peso para cada ejercicio</li>
+                <li>Historial de progreso completo</li>
+                <li>Memoria de conversación persistente</li>
+              </ul>
+            </div>
             <button
               onClick={() => setShowSettings(true)}
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg"
@@ -401,7 +639,7 @@ ${context}`
                 <div className="bg-slate-800 rounded-2xl p-4 shadow-lg">
                   <div className="flex items-center gap-2">
                     <div className="animate-spin w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full" />
-                    <span className="text-sm text-gray-400">Pensando...</span>
+                    <span className="text-sm text-gray-400">Analizando...</span>
                   </div>
                 </div>
               </div>
@@ -447,6 +685,11 @@ ${context}`
                 <MessageCircle className="w-5 h-5" />
               </button>
             </div>
+            {messages.length > 1 && (
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                💾 Memoria activa - La IA recuerda toda la conversación
+              </p>
+            )}
           </div>
         </>
       )}
