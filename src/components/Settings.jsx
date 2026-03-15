@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, Cloud, CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Database, CheckCircle, AlertCircle, Loader, RefreshCw, ChevronLeft } from 'lucide-react';
 import { getSettings, saveSettings } from '../utils/storageHelper';
 import { initSupabase, syncToSupabase, loadFromSupabase, isSupabaseConfigured } from '../utils/database';
 import { exportAllData } from '../utils/storageHelper';
@@ -151,9 +151,9 @@ export default function Settings({ onBack, onSupabaseConfigured }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
-      <button onClick={onBack} className="mb-6 text-blue-400 hover:text-blue-300">
-        ← Volver
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-5 pb-24">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors">
+        <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
       </button>
 
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-2">

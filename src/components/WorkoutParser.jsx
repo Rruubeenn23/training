@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileText, Calendar as CalendarIcon } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileText, Calendar as CalendarIcon, ChevronLeft } from 'lucide-react';
 import { parseMotraWorkout, convertToInternalFormat, extractWorkoutMetadata, isValidMotraWorkout } from '../utils/motraParser';
 import { saveWorkoutLogs, saveWorkoutMetadata, getWorkoutLogs } from '../utils/storageHelper';
 import { getTodayDateKey, parseDateFromMotra, formatDateDisplay } from '../utils/dateUtils';
@@ -122,12 +122,13 @@ export default function WorkoutParser({ onSuccess, onClose }) {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
+        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-5 pb-24">
             <button
                 onClick={onClose}
-                className="mb-6 text-blue-400 hover:text-blue-300 transition-colors"
+                className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors"
             >
-                ← Volver
+                <ChevronLeft className="w-5 h-5" />
+                <span className="font-medium">Volver</span>
             </button>
 
             <div className="max-w-2xl mx-auto">

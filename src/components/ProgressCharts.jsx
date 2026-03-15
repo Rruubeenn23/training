@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { TrendingUp, Activity, Dumbbell, ChevronDown } from 'lucide-react';
+import { TrendingUp, Activity, Dumbbell, ChevronDown, ChevronLeft } from 'lucide-react';
 import { getExerciseHistory, getAllExercises } from '../utils/storageHelper';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -73,8 +73,8 @@ export default function ProgressCharts({ workoutLogs, onClose }) {
   if (exercises.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-        <button onClick={onClose} className="mb-6 text-blue-400 hover:text-blue-300">
-          ← Volver
+        <button onClick={onClose} className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors">
+          <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
         </button>
         <div className="text-center py-20">
           <Activity className="w-16 h-16 mx-auto mb-4 text-gray-600" />
@@ -87,8 +87,8 @@ export default function ProgressCharts({ workoutLogs, onClose }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
-      <button onClick={onClose} className="mb-6 text-blue-400 hover:text-blue-300">
-        ← Volver
+      <button onClick={onClose} className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors">
+        <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
       </button>
 
       {/* Header */}

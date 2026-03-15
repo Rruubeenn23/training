@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { History, Search, Filter, TrendingUp, Calendar, Dumbbell, Clock, Zap, ChevronDown, ChevronRight } from 'lucide-react';
+import { History, Search, TrendingUp, Calendar, Dumbbell, Clock, Zap, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { getWorkoutLogs, getWorkoutMetadata } from '../utils/storageHelper';
 
 export default function WorkoutHistory({ onClose }) {
@@ -106,9 +106,9 @@ export default function WorkoutHistory({ onClose }) {
   const stats = calculateStats(filteredDates);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 pb-24">
-      <button onClick={onClose} className="mb-6 text-blue-400 hover:text-blue-300">
-        ← Volver
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-5 pb-24">
+      <button onClick={onClose} className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors">
+        <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
       </button>
 
       {/* Header */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle, RotateCcw } from 'lucide-react';
+import { Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle, RotateCcw, ChevronLeft } from 'lucide-react';
 import { getSettings, saveSettings, getDailyFeelings, getWorkoutMetadata } from '../utils/storageHelper';
 import { getAllExercises, getExerciseHistory } from '../utils/storageHelper';
 import { getTodayFullInfo, getTodayDateKey } from '../utils/dateUtils';
@@ -455,14 +455,11 @@ INSTRUCCIONES:
   if (showSettings) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-        <button 
-          onClick={() => {
-            setShowSettings(false);
-            setError('');
-          }} 
-          className="mb-6 text-blue-400 hover:text-blue-300"
+        <button
+          onClick={() => { setShowSettings(false); setError(''); }}
+          className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors"
         >
-          ← Volver
+          <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
         </button>
 
         <div className="max-w-xl mx-auto">
@@ -555,8 +552,8 @@ INSTRUCCIONES:
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col">
       <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 flex items-center justify-between shadow-lg">
-        <button onClick={onClose} className="text-purple-100 hover:text-white">
-          ← Volver
+        <button onClick={onClose} className="flex items-center gap-1 text-purple-100 hover:text-white transition-colors">
+          <ChevronLeft className="w-5 h-5" /><span className="text-sm font-medium">Volver</span>
         </button>
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Brain className="w-6 h-6" />
