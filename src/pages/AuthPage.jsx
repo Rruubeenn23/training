@@ -217,23 +217,23 @@ export default function AuthPage() {
             </button>
           </form>
 
-          {/* Divider + Google */}
-          {mode !== 'reset' && (
-            <>
-              <div className="flex items-center gap-3 my-4">
-                <div className="flex-1 h-px bg-slate-700" />
-                <span className="text-slate-500 text-xs">o continúa con</span>
-                <div className="flex-1 h-px bg-slate-700" />
-              </div>
-              <button
-                onClick={handleGoogle}
-                className="w-full bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-white font-medium py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all text-sm"
-              >
-                <Chrome size={16} />
-                Google
-              </button>
-            </>
-          )}
+    //      {/* Divider + Google */}
+  //        {/*mode !== 'reset' && (
+     //       <>
+       //       <div className="flex items-center gap-3 my-4">
+         //       <div className="flex-1 h-px bg-slate-700" />
+           //     <span className="text-slate-500 text-xs">o continúa con</span>
+            //    <div className="flex-1 h-px bg-slate-700" />
+            //  </div>
+             //</div> <button
+              //  onClick={handleGoogle}
+               // className="w-full bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-white font-medium py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all text-sm"
+              //>
+               // <Chrome size={16} />
+                //</div>Google
+              //</button>
+            //</>
+         // )}
 
           {/* Back link for reset */}
           {mode === 'reset' && (
