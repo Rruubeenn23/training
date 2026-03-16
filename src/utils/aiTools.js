@@ -3,7 +3,7 @@
  * + executor that bridges AI responses to app state
  */
 
-import { saveTrainingPlan, saveTrainingCycles } from './storageHelper';
+// Persistence is handled by AppDataContext via the setters passed to executeTool
 
 // ─── Tool Schemas (sent to Groq API) ─────────────────────────────────────────
 export const AI_TOOLS = [
@@ -176,8 +176,7 @@ export async function executeTool(toolName, args, appState, appSetters) {
           updatedAt: new Date().toISOString(),
           plan: args.plan
         };
-        await saveTrainingPlan(newPlan);
-        setTrainingPlan(newPlan);
+        await setTrainingPlan(newPlan);
         const dayCount = Object.keys(args.plan).length;
         const exerciseCount = Object.values(args.plan).reduce((a, d) => a + (d.exercises?.length || 0), 0);
         return {
@@ -205,8 +204,7 @@ export async function executeTool(toolName, args, appState, appSetters) {
           updatedAt: new Date().toISOString(),
           plan: { ...trainingPlan.plan, [args.day]: updatedDay }
         };
-        await saveTrainingPlan(newPlan);
-        setTrainingPlan(newPlan);
+        await setTrainingPlan(newPlan);
         const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[args.day];
         return {
           success: true,
@@ -231,8 +229,7 @@ export async function executeTool(toolName, args, appState, appSetters) {
           cycles: [...currentCycles.cycles, newCycle],
           activeCycleId: id
         };
-        await saveTrainingCycles(updated);
-        setTrainingCycles(updated);
+        await setTrainingCycles(updated);
         const phaseNames = args.phases.map(p => `${p.name} (${p.weeks.length} sem.)`).join(' → ');
         return {
           success: true,
@@ -268,8 +265,7 @@ export async function executeTool(toolName, args, appState, appSetters) {
         });
 
         const newPlan = { ...trainingPlan, plan: updatedPlan, updatedAt: new Date().toISOString() };
-        await saveTrainingPlan(newPlan);
-        setTrainingPlan(newPlan);
+        await setTrainingPlan(newPlan);
         const names = args.updates.map(u => u.exerciseName).join(', ');
         return {
           success: true,

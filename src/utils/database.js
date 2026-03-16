@@ -1,435 +1,365 @@
 /**
- * Database configuration - Supabase (FREE) con AUTO-SYNC
- * 
- * MEJORAS:
- * - Auto-sync en CADA operación (no manual)
- * - Auto-load al iniciar la app
- * - Sincronización en background sin interferir
+ * Database layer — all Supabase CRUD operations
+ * All functions require userId (from Supabase Auth, never hardcoded)
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { addToOfflineSyncQueue, getOfflineSyncQueue, removeFromOfflineSyncQueue } from './storageHelper';
+import { supabase } from '../lib/supabase';
 
-// Configuración - Obtener de settings
-let supabaseClient = null;
-let autoSyncEnabled = false;
+// ─── Profile & Settings ───────────────────────────────────────────────────────
 
-export function initSupabase(url, key) {
-  if (!url || !key) return null;
-  
-  try {
-    supabaseClient = createClient(url, key);
-    autoSyncEnabled = true;
-    return supabaseClient;
-  } catch (error) {
-    console.error('Error initializing Supabase:', error);
-    return null;
-  }
+export async function getProfile(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-export function getSupabase() {
-  return supabaseClient;
+export async function updateProfile(userId, updates) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-export function isSupabaseConfigured() {
-  return supabaseClient !== null;
+export async function getUserSettings(userId) {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-export function setAutoSync(enabled) {
-  autoSyncEnabled = enabled;
+export async function updateUserSettings(userId, updates) {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-/**
- * Database schema para Supabase
- */
-export const DATABASE_SCHEMA = `
--- Workouts table
-CREATE TABLE IF NOT EXISTS workouts (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL DEFAULT 'default-user',
-  date DATE NOT NULL,
-  exercises JSONB NOT NULL,
-  metadata JSONB,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, date)
-);
+// ─── AI Memory ────────────────────────────────────────────────────────────────
 
--- Feelings table
-CREATE TABLE IF NOT EXISTS feelings (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL DEFAULT 'default-user',
-  date DATE NOT NULL,
-  energy INTEGER CHECK (energy >= 1 AND energy <= 10),
-  sleep INTEGER CHECK (sleep >= 1 AND sleep <= 10),
-  motivation INTEGER CHECK (motivation >= 1 AND motivation <= 10),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, date)
-);
+export async function getAIMemory(userId) {
+  const { data, error } = await supabase
+    .from('ai_memory')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
 
--- Nutrition table
-CREATE TABLE IF NOT EXISTS nutrition (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL DEFAULT 'default-user',
-  date DATE NOT NULL,
-  protein FLOAT DEFAULT 0,
-  carbs FLOAT DEFAULT 0,
-  fats FLOAT DEFAULT 0,
-  water FLOAT DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(user_id, date)
-);
+export async function upsertAIMemory(userId, memory) {
+  const { data, error } = await supabase
+    .from('ai_memory')
+    .upsert({
+      user_id: userId,
+      ...memory,
+      last_updated_at: new Date().toISOString(),
+      memory_version: (memory.memory_version || 0) + 1
+    }, { onConflict: 'user_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
--- Photos table
-CREATE TABLE IF NOT EXISTS photos (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id TEXT NOT NULL DEFAULT 'default-user',
-  date DATE NOT NULL,
-  image_url TEXT NOT NULL,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+// ─── Training Plan ────────────────────────────────────────────────────────────
 
--- Indexes para búsqueda rápida
-CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_feelings_user_date ON feelings(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_nutrition_user_date ON nutrition(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_photos_user_date ON photos(user_id, date DESC);
+export async function getTrainingPlan(userId) {
+  const { data, error } = await supabase
+    .from('training_plans')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
 
--- Row Level Security (opcional, para seguridad)
-ALTER TABLE workouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE feelings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE nutrition ENABLE ROW LEVEL SECURITY;
-ALTER TABLE photos ENABLE ROW LEVEL SECURITY;
+export async function upsertTrainingPlan(userId, planData, name = 'Mi Plan') {
+  // Get existing active plan
+  const existing = await getTrainingPlan(userId);
 
--- Policy para permitir todo por ahora (cambiar en producción)
-CREATE POLICY "Enable all access for workouts" ON workouts FOR ALL USING (true);
-CREATE POLICY "Enable all access for feelings" ON feelings FOR ALL USING (true);
-CREATE POLICY "Enable all access for nutrition" ON nutrition FOR ALL USING (true);
-CREATE POLICY "Enable all access for photos" ON photos FOR ALL USING (true);
-`;
-
-/**
- * AUTO-SYNC: Sube un workout individual a Supabase
- * Se llama automáticamente después de guardar localmente
- */
-export async function autoSyncWorkout(dateKey, exercises, metadata, userId = 'default-user') {
-  if (!supabaseClient || !autoSyncEnabled) return;
-  
-  try {
-    const { error } = await supabaseClient
-      .from('workouts')
-      .upsert({
-        user_id: userId,
-        date: dateKey,
-        exercises,
-        metadata: metadata || {},
+  if (existing) {
+    const { data, error } = await supabase
+      .from('training_plans')
+      .update({
+        plan: planData,
+        name,
+        version: (existing.version || 0) + 1,
         updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,date'
-      });
-
-    if (error) {
-      console.error('Error auto-syncing workout:', error);
-      await addToOfflineSyncQueue('workout', dateKey, { exercises, metadata: metadata || {} });
-    } else {
-      console.log(`✅ Auto-synced workout for ${dateKey}`);
-    }
-  } catch (error) {
-    console.error('Error in auto-sync:', error);
-    await addToOfflineSyncQueue('workout', dateKey, { exercises, metadata: metadata || {} });
-  }
-}
-
-/**
- * AUTO-SYNC: Sube un feeling a Supabase
- */
-export async function autoSyncFeeling(dateKey, feeling, userId = 'default-user') {
-  if (!supabaseClient || !autoSyncEnabled) return;
-  
-  try {
-    const { error } = await supabaseClient
-      .from('feelings')
-      .upsert({
-        user_id: userId,
-        date: dateKey,
-        energy: feeling.energy,
-        sleep: feeling.sleep,
-        motivation: feeling.motivation
-      }, {
-        onConflict: 'user_id,date'
-      });
-
-    if (error) {
-      console.error('Error auto-syncing feeling:', error);
-    } else {
-      console.log(`✅ Auto-synced feeling for ${dateKey}`);
-    }
-  } catch (error) {
-    console.error('Error in auto-sync feeling:', error);
-  }
-}
-
-/**
- * AUTO-SYNC: Sube nutrition a Supabase
- */
-export async function autoSyncNutrition(dateKey, nutrition, userId = 'default-user') {
-  if (!supabaseClient || !autoSyncEnabled) return;
-  
-  try {
-    const { error } = await supabaseClient
-      .from('nutrition')
-      .upsert({
-        user_id: userId,
-        date: dateKey,
-        protein: nutrition.protein || 0,
-        carbs: nutrition.carbs || 0,
-        fats: nutrition.fats || 0,
-        water: nutrition.water || 0,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,date'
-      });
-
-    if (error) {
-      console.error('Error auto-syncing nutrition:', error);
-    } else {
-      console.log(`✅ Auto-synced nutrition for ${dateKey}`);
-    }
-  } catch (error) {
-    console.error('Error in auto-sync nutrition:', error);
-  }
-}
-
-/**
- * Process queued items that failed to sync
- */
-export async function processOfflineSyncQueue(userId = 'default-user') {
-  if (!supabaseClient || !navigator.onLine) return;
-
-  const { queue } = await getOfflineSyncQueue();
-  if (!queue || queue.length === 0) return;
-
-  console.log(`🔄 Processing ${queue.length} queued sync items...`);
-
-  for (const item of queue) {
-    if (item.retryCount >= 5) {
-      await removeFromOfflineSyncQueue(item.id);
-      continue;
-    }
-
-    try {
-      if (item.type === 'workout') {
-        const { error } = await supabaseClient.from('workouts').upsert({
-          user_id: userId,
-          date: item.dateKey,
-          exercises: item.payload.exercises,
-          metadata: item.payload.metadata || {},
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,date' });
-        if (!error) {
-          await removeFromOfflineSyncQueue(item.id);
-          console.log(`✅ Synced queued workout for ${item.dateKey}`);
-        }
-      } else if (item.type === 'feeling') {
-        const { error } = await supabaseClient.from('feelings').upsert({
-          user_id: userId,
-          date: item.dateKey,
-          ...item.payload
-        }, { onConflict: 'user_id,date' });
-        if (!error) await removeFromOfflineSyncQueue(item.id);
-      } else if (item.type === 'nutrition') {
-        const { error } = await supabaseClient.from('nutrition').upsert({
-          user_id: userId,
-          date: item.dateKey,
-          ...item.payload,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,date' });
-        if (!error) await removeFromOfflineSyncQueue(item.id);
-      }
-    } catch {}
-  }
-}
-
-/**
- * AUTO-LOAD: Carga datos desde Supabase al iniciar
- * Se llama automáticamente cuando la app arranca
- */
-export async function autoLoadFromSupabase(userId = 'default-user') {
-  if (!supabaseClient) return null;
-
-  const data = {
-    workoutLogs: {},
-    workoutMetadata: {},
-    feelings: {},
-    nutrition: {}
-  };
-
-  try {
-    // Load workouts
-    const { data: workouts, error: workoutsError } = await supabaseClient
-      .from('workouts')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
-    if (!workoutsError && workouts) {
-      workouts.forEach(workout => {
-        data.workoutLogs[workout.date] = workout.exercises;
-        if (workout.metadata) {
-          data.workoutMetadata[workout.date] = workout.metadata;
-        }
-      });
-      console.log(`✅ Auto-loaded ${workouts.length} workouts from Supabase`);
-    }
-
-    // Load feelings
-    const { data: feelings, error: feelingsError } = await supabaseClient
-      .from('feelings')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
-    if (!feelingsError && feelings) {
-      feelings.forEach(feeling => {
-        data.feelings[feeling.date] = {
-          energy: feeling.energy,
-          sleep: feeling.sleep,
-          motivation: feeling.motivation,
-          date: feeling.created_at
-        };
-      });
-      console.log(`✅ Auto-loaded ${feelings.length} feelings from Supabase`);
-    }
-
-    // Load nutrition
-    const { data: nutrition, error: nutritionError } = await supabaseClient
-      .from('nutrition')
-      .select('*')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
-
-    if (!nutritionError && nutrition) {
-      nutrition.forEach(n => {
-        data.nutrition[n.date] = {
-          protein: n.protein,
-          carbs: n.carbs,
-          fats: n.fats,
-          water: n.water
-        };
-      });
-      console.log(`✅ Auto-loaded ${nutrition.length} nutrition logs from Supabase`);
-    }
-
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
     return data;
-  } catch (error) {
-    console.error('Error auto-loading from Supabase:', error);
-    return null;
+  } else {
+    const { data, error } = await supabase
+      .from('training_plans')
+      .insert({
+        user_id: userId,
+        plan: planData,
+        name,
+        is_active: true,
+        version: 1
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   }
 }
 
-/**
- * MANUAL SYNC: Sync completo de todos los datos (para botón manual si se desea)
- */
-export async function syncToSupabase(localData, userId = 'default-user') {
-  if (!supabaseClient) {
-    throw new Error('Supabase no está configurado');
-  }
+// ─── Training Cycles ──────────────────────────────────────────────────────────
 
-  const results = {
-    workouts: { success: 0, errors: 0 },
-    feelings: { success: 0, errors: 0 },
-    nutrition: { success: 0, errors: 0 }
+export async function getTrainingCycles(userId) {
+  const { data, error } = await supabase
+    .from('training_cycles')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function insertTrainingCycle(userId, cycle) {
+  const { data, error } = await supabase
+    .from('training_cycles')
+    .insert({ user_id: userId, ...cycle })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ─── Workouts ─────────────────────────────────────────────────────────────────
+
+export async function getWorkouts(userId, limit = 90) {
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('date, exercises, metadata')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  // Convert to { dateKey: exercises } format
+  const logs = {};
+  const meta = {};
+  (data || []).forEach(w => {
+    logs[w.date] = w.exercises;
+    if (w.metadata) meta[w.date] = w.metadata;
+  });
+  return { logs, meta };
+}
+
+export async function upsertWorkout(userId, date, exercises, metadata = {}) {
+  const { error } = await supabase
+    .from('workouts')
+    .upsert({
+      user_id: userId,
+      date,
+      exercises,
+      metadata,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,date' });
+  if (error) throw error;
+}
+
+// ─── Feelings ────────────────────────────────────────────────────────────────
+
+export async function getFeelings(userId, limit = 30) {
+  const { data, error } = await supabase
+    .from('feelings')
+    .select('date, energy, sleep, motivation, notes')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  const feelings = {};
+  (data || []).forEach(f => { feelings[f.date] = f; });
+  return feelings;
+}
+
+export async function upsertFeeling(userId, date, feeling) {
+  const { error } = await supabase
+    .from('feelings')
+    .upsert({ user_id: userId, date, ...feeling }, { onConflict: 'user_id,date' });
+  if (error) throw error;
+}
+
+// ─── Nutrition ────────────────────────────────────────────────────────────────
+
+export async function getNutrition(userId, limit = 30) {
+  const { data, error } = await supabase
+    .from('nutrition')
+    .select('date, protein_g, carbs_g, fats_g, water_glasses, notes')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  const nutrition = {};
+  (data || []).forEach(n => {
+    nutrition[n.date] = {
+      protein: n.protein_g, carbs: n.carbs_g, fats: n.fats_g,
+      water: n.water_glasses, notes: n.notes
+    };
+  });
+  return nutrition;
+}
+
+export async function upsertNutrition(userId, date, data) {
+  const { error } = await supabase
+    .from('nutrition')
+    .upsert({
+      user_id: userId, date,
+      protein_g: data.protein || 0,
+      carbs_g: data.carbs || 0,
+      fats_g: data.fats || 0,
+      water_glasses: data.water || 0,
+      notes: data.notes || null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,date' });
+  if (error) throw error;
+}
+
+// ─── Personal Records ─────────────────────────────────────────────────────────
+
+export async function getPersonalRecords(userId) {
+  const { data, error } = await supabase
+    .from('personal_records')
+    .select('exercise_name, best_weight, best_1rm, history')
+    .eq('user_id', userId);
+  if (error) throw error;
+
+  const records = {};
+  (data || []).forEach(r => {
+    records[r.exercise_name] = {
+      bestWeight: r.best_weight,
+      best1RM: r.best_1rm,
+      history: r.history || []
+    };
+  });
+  return records;
+}
+
+export async function upsertPersonalRecord(userId, exerciseName, record) {
+  const { error } = await supabase
+    .from('personal_records')
+    .upsert({
+      user_id: userId,
+      exercise_name: exerciseName,
+      best_weight: record.bestWeight,
+      best_1rm: record.best1RM,
+      history: record.history || [],
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,exercise_name' });
+  if (error) throw error;
+}
+
+// ─── Body Metrics ─────────────────────────────────────────────────────────────
+
+export async function getBodyMetrics(userId) {
+  const { data, error } = await supabase
+    .from('body_metrics')
+    .select('date, weight_kg, body_fat_pct, waist_cm, notes')
+    .eq('user_id', userId)
+    .order('date', { ascending: true });
+  if (error) throw error;
+
+  return { entries: (data || []).map(e => ({
+    date: e.date,
+    weight: e.weight_kg,
+    bodyFatPct: e.body_fat_pct,
+    waistCm: e.waist_cm,
+    notes: e.notes
+  })) };
+}
+
+export async function upsertBodyMetric(userId, entry) {
+  const { error } = await supabase
+    .from('body_metrics')
+    .upsert({
+      user_id: userId,
+      date: entry.date,
+      weight_kg: entry.weight,
+      body_fat_pct: entry.bodyFatPct || null,
+      waist_cm: entry.waistCm || null,
+      notes: entry.notes || null
+    }, { onConflict: 'user_id,date' });
+  if (error) throw error;
+}
+
+// ─── Exercise Library ─────────────────────────────────────────────────────────
+
+export async function getExercises(userId) {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .or(`user_id.is.null,user_id.eq.${userId}`)
+    .order('name');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createExercise(userId, exercise) {
+  const { data, error } = await supabase
+    .from('exercises')
+    .insert({ user_id: userId, ...exercise, is_custom: true })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ─── Batch Load (on app startup) ─────────────────────────────────────────────
+
+export async function loadAllUserData(userId) {
+  const [
+    profileRes, settingsRes, memoryRes, planRes, cyclesRes,
+    workoutsRes, feelingsRes, nutritionRes, prRes, metricsRes
+  ] = await Promise.allSettled([
+    getProfile(userId),
+    getUserSettings(userId),
+    getAIMemory(userId),
+    getTrainingPlan(userId),
+    getTrainingCycles(userId),
+    getWorkouts(userId, 180),
+    getFeelings(userId, 60),
+    getNutrition(userId, 60),
+    getPersonalRecords(userId),
+    getBodyMetrics(userId),
+  ]);
+
+  return {
+    profile: profileRes.status === 'fulfilled' ? profileRes.value : null,
+    settings: settingsRes.status === 'fulfilled' ? settingsRes.value : {},
+    aiMemory: memoryRes.status === 'fulfilled' ? memoryRes.value : null,
+    trainingPlan: planRes.status === 'fulfilled' ? planRes.value : null,
+    trainingCycles: cyclesRes.status === 'fulfilled' ? cyclesRes.value : [],
+    workoutLogs: workoutsRes.status === 'fulfilled' ? workoutsRes.value.logs : {},
+    workoutMeta: workoutsRes.status === 'fulfilled' ? workoutsRes.value.meta : {},
+    feelings: feelingsRes.status === 'fulfilled' ? feelingsRes.value : {},
+    nutrition: nutritionRes.status === 'fulfilled' ? nutritionRes.value : {},
+    personalRecords: prRes.status === 'fulfilled' ? prRes.value : {},
+    bodyMetrics: metricsRes.status === 'fulfilled' ? metricsRes.value : { entries: [] },
   };
-
-  // Sync workouts
-  if (localData.workoutLogs) {
-    for (const [date, exercises] of Object.entries(localData.workoutLogs)) {
-      if (Object.keys(exercises).length === 0) continue;
-      
-      try {
-        const metadata = localData.workoutMetadata?.[date] || {};
-        
-        const { error } = await supabaseClient
-          .from('workouts')
-          .upsert({
-            user_id: userId,
-            date,
-            exercises,
-            metadata,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id,date'
-          });
-
-        if (error) throw error;
-        results.workouts.success++;
-      } catch (error) {
-        console.error(`Error syncing workout for ${date}:`, error);
-        results.workouts.errors++;
-      }
-    }
-  }
-
-  // Sync feelings
-  if (localData.feelings) {
-    for (const [date, feeling] of Object.entries(localData.feelings)) {
-      try {
-        const { error } = await supabaseClient
-          .from('feelings')
-          .upsert({
-            user_id: userId,
-            date,
-            energy: feeling.energy,
-            sleep: feeling.sleep,
-            motivation: feeling.motivation
-          }, {
-            onConflict: 'user_id,date'
-          });
-
-        if (error) throw error;
-        results.feelings.success++;
-      } catch (error) {
-        console.error(`Error syncing feeling for ${date}:`, error);
-        results.feelings.errors++;
-      }
-    }
-  }
-
-  // Sync nutrition
-  if (localData.nutrition) {
-    for (const [date, data] of Object.entries(localData.nutrition)) {
-      try {
-        const { error } = await supabaseClient
-          .from('nutrition')
-          .upsert({
-            user_id: userId,
-            date,
-            protein: data.protein || 0,
-            carbs: data.carbs || 0,
-            fats: data.fats || 0,
-            water: data.water || 0,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id,date'
-          });
-
-        if (error) throw error;
-        results.nutrition.success++;
-      } catch (error) {
-        console.error(`Error syncing nutrition for ${date}:`, error);
-        results.nutrition.errors++;
-      }
-    }
-  }
-
-  return results;
-}
-
-/**
- * Load data from Supabase (manual)
- */
-export async function loadFromSupabase(userId = 'default-user') {
-  return autoLoadFromSupabase(userId);
 }

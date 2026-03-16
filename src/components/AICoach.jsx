@@ -1,60 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle,
-  RotateCcw, ChevronLeft, Check, X, Undo2, Dumbbell, Target,
-  TrendingUp, Calendar, RefreshCw
+  RotateCcw, ChevronLeft, Undo2, Dumbbell, Target,
+  TrendingUp, Calendar, RefreshCw, Key
 } from 'lucide-react';
-import {
-  getSettings, saveSettings, getDailyFeelings, getWorkoutMetadata
-} from '../utils/storageHelper';
+import { useAppData } from '../contexts/AppDataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { buildMemoryPrompt, extractMemoryDeltaFromConversation } from '../utils/aiMemory';
 import { getAllExercises, getExerciseHistory } from '../utils/storageHelper';
-import { getTodayFullInfo, getTodayDateKey } from '../utils/dateUtils';
+import { getTodayFullInfo } from '../utils/dateUtils';
 import { AI_TOOLS, executeTool } from '../utils/aiTools';
 
-// ─── Rubén Profile (always sent as system context) ───────────────────────────
-const RUBEN_PROFILE = {
-  profile: { name: 'Rubén', age: 21, height_cm: 170, approx_start_weight_kg: 100,
-    current_context: { goal: 'Fat loss with muscle maintenance / recomposition', primary_focus: 'Reducir volumen corporal manteniendo fuerza y músculo' }
-  },
-  medical_context: {
-    medication: 'Mounjaro (tirzepatida)', duration_months: 3, initial_progress: '≈1 kg por semana',
-    notes: ['Reducción de apetito', 'Menor ingesta calórica espontánea', 'Posible recomposición corporal', 'Mayor sensibilidad a la fatiga en déficit']
-  },
-  weekly_schedule: {
-    training_window: '18:00 - 22:00',
-    sports: { friday: 'Fútbol 1h30 (alta intensidad)', sunday_optional: 'Pádel 1h30' }
-  },
-  nutrition_habits: { protein_target_g_day: '160-180', hydration_focus: true },
-  optimization_principles: [
-    'Reducir volumen innecesario', 'Priorizar tensión mecánica', 'Evitar fallo absoluto en déficit',
-    'Más repeticiones antes que subir peso', 'Minimizar fricción logística', 'Mantener sostenibilidad semanal'
-  ],
-  overall_status: {
-    discipline_level: 'Alto', training_quality: 'Buena técnica y progresión sólida',
-    main_risk: 'Acumulación de fatiga + volumen excesivo', current_phase: 'Afinado para recomposición corporal'
-  }
-};
-
-// ─── Action Card Component ────────────────────────────────────────────────────
+// ─── Action Card ──────────────────────────────────────────────────────────────
 function ActionCard({ toolName, summary, success, undoData, onUndo }) {
   const [undone, setUndone] = useState(false);
-
-  const TOOL_ICONS = {
-    replace_weekly_plan: Dumbbell,
-    modify_day_workout: Calendar,
-    create_training_cycle: Target,
-    update_exercise_targets: TrendingUp,
+  const ICONS = {
+    replace_weekly_plan: Dumbbell, modify_day_workout: Calendar,
+    create_training_cycle: Target, update_exercise_targets: TrendingUp,
     read_current_plan: RefreshCw,
   };
-
-  const Icon = TOOL_ICONS[toolName] || Zap;
-
-  const handleUndo = () => {
-    if (undoData && onUndo) {
-      onUndo(undoData);
-      setUndone(true);
-    }
-  };
+  const Icon = ICONS[toolName] || Zap;
 
   if (!success) {
     return (
@@ -64,17 +29,10 @@ function ActionCard({ toolName, summary, success, undoData, onUndo }) {
       </div>
     );
   }
-
   return (
-    <div className={`border rounded-2xl p-3 mb-2 transition-all ${
-      undone
-        ? 'bg-slate-800/50 border-slate-600/30'
-        : 'bg-emerald-900/25 border-emerald-500/30'
-    }`}>
+    <div className={`border rounded-2xl p-3 mb-2 transition-all ${undone ? 'bg-slate-800/50 border-slate-600/30' : 'bg-emerald-900/25 border-emerald-500/30'}`}>
       <div className="flex items-start gap-3">
-        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-          undone ? 'bg-slate-700' : 'bg-emerald-500/20'
-        }`}>
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${undone ? 'bg-slate-700' : 'bg-emerald-500/20'}`}>
           {undone ? <Undo2 className="w-4 h-4 text-slate-400" /> : <Icon className="w-4 h-4 text-emerald-400" />}
         </div>
         <div className="flex-1 min-w-0">
@@ -85,11 +43,10 @@ function ActionCard({ toolName, summary, success, undoData, onUndo }) {
         </div>
         {undoData && !undone && (
           <button
-            onClick={handleUndo}
+            onClick={() => { onUndo?.(undoData); setUndone(true); }}
             className="flex-shrink-0 text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-700 transition-all"
           >
-            <Undo2 className="w-3 h-3" />
-            Deshacer
+            <Undo2 className="w-3 h-3" /> Deshacer
           </button>
         )}
       </div>
@@ -97,21 +54,17 @@ function ActionCard({ toolName, summary, success, undoData, onUndo }) {
   );
 }
 
-// ─── Main AICoach Component ───────────────────────────────────────────────────
-export default function AICoach({
-  workoutLogs,
-  trainingPlan,
-  trainingCycles,
-  progressionTargets,
-  personalRecords,
-  bodyMetrics,
-  preloadedMessage,
-  onPlanUpdate,
-  onCyclesUpdate,
-  onClose
-}) {
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function AICoach({ preloadedMessage, onClose }) {
+  const { user, displayName } = useAuth();
+  const {
+    workoutLog, workoutMeta, trainingPlan, trainingCycles,
+    personalRecords, progressionTargets, bodyMetrics,
+    feelings, aiMemory, userSettings,
+    savePlan, saveTrainingCycle, updateMemory,
+  } = useAppData();
+
   const [apiKey, setApiKey] = useState('');
-  const [aiProvider, setAiProvider] = useState('groq');
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -124,37 +77,22 @@ export default function AICoach({
   const insightsFetched = useRef(false);
 
   useEffect(() => {
-    loadApiKey();
+    const savedKey = localStorage.getItem('groq_api_key') || userSettings?.groq_api_key || '';
+    if (savedKey) { setApiKey(savedKey); setHasApiKey(true); }
     addWelcomeMessage();
   }, []);
 
-  // Handle preloaded message (from post-workout summary)
   useEffect(() => {
-    if (preloadedMessage && hasApiKey) {
-      setInputMessage(preloadedMessage);
-    }
+    if (preloadedMessage && hasApiKey) setInputMessage(preloadedMessage);
   }, [preloadedMessage, hasApiKey]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const loadApiKey = async () => {
-    const settings = await getSettings();
-    if (settings.aiApiKey) {
-      setApiKey(settings.aiApiKey);
-      setHasApiKey(true);
-    }
-    if (settings.aiProvider) setAiProvider(settings.aiProvider);
-  };
-
-  const saveApiKey = async () => {
-    if (!apiKey.trim()) { setError('Por favor ingresa una API key válida'); return; }
-    const settings = await getSettings();
-    settings.aiApiKey = apiKey;
-    settings.aiProvider = aiProvider;
-    await saveSettings(settings);
+  const saveApiKey = () => {
+    if (!apiKey.trim()) return;
+    localStorage.setItem('groq_api_key', apiKey.trim());
     setHasApiKey(true);
     setShowSettings(false);
     setError('');
@@ -163,11 +101,12 @@ export default function AICoach({
 
   const addWelcomeMessage = () => {
     const todayInfo = getTodayFullInfo();
+    const name = displayName || 'atleta';
     setMessages([{
       role: 'assistant',
-      content: `¡Hola Rubén! Hoy es **${todayInfo.dayName} ${new Date().getDate()} de ${new Date().toLocaleDateString('es-ES', { month: 'long' })}**.
+      content: `¡Hola, ${name}! Hoy es **${todayInfo.dayName} ${new Date().getDate()} de ${new Date().toLocaleDateString('es-ES', { month: 'long' })}**.
 
-Soy tu coach IA. Además de analizar tu progreso, ahora puedo **gestionar directamente tu app**:
+Soy tu coach IA. Puedo analizar tu progreso y **gestionar directamente tu app**:
 
 • Crear o modificar tu rutina semanal
 • Diseñar ciclos de entrenamiento periodizados
@@ -175,41 +114,38 @@ Soy tu coach IA. Además de analizar tu progreso, ahora puedo **gestionar direct
 • Programar semanas de descarga
 
 ¿Qué necesitas?`,
-      timestamp: new Date()
+      timestamp: new Date(),
     }]);
   };
 
   const resetConversation = () => {
-    if (confirm('¿Reiniciar conversación? Se perderá el historial actual.')) {
-      addWelcomeMessage();
-      insightsFetched.current = false;
-      setInsights(null);
-    }
+    if (!confirm('¿Reiniciar conversación?')) return;
+    addWelcomeMessage();
+    insightsFetched.current = false;
+    setInsights(null);
   };
 
   // ─── Context Builder ────────────────────────────────────────────────────────
-  const buildCompleteContext = async () => {
+  const buildContext = () => {
     const todayInfo = getTodayFullInfo();
-    const feelings = await getDailyFeelings();
-    const metadata = await getWorkoutMetadata();
-    const exercises = getAllExercises(workoutLogs);
+    const exercises = getAllExercises(workoutLog);
 
-    const todayWorkout = workoutLogs[todayInfo.dateKey];
+    const todayWorkout = workoutLog[todayInfo.dateKey];
     const todayHasWorkout = todayWorkout && Object.keys(todayWorkout).length > 0;
 
-    const recentWorkouts = Object.entries(workoutLogs)
+    const recentWorkouts = Object.entries(workoutLog)
       .sort(([a], [b]) => new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00'))
       .slice(0, 7);
 
     const exerciseFreq = {};
-    Object.values(workoutLogs).forEach(day => {
+    Object.values(workoutLog).forEach(day => {
       Object.keys(day).forEach(ex => { exerciseFreq[ex] = (exerciseFreq[ex] || 0) + 1; });
     });
     const topExercises = Object.entries(exerciseFreq).sort(([, a], [, b]) => b - a).slice(0, 10).map(([ex]) => ex);
 
     const progressions = {};
     topExercises.forEach(ex => {
-      const history = getExerciseHistory(workoutLogs, ex);
+      const history = getExerciseHistory(workoutLog, ex);
       if (history.length >= 2) {
         const first = history[0];
         const last = history[history.length - 1];
@@ -219,42 +155,36 @@ Soy tu coach IA. Además de analizar tu progreso, ahora puedo **gestionar direct
           currentWeight: last.maxWeight,
           progress: last.maxWeight - first.maxWeight,
           current1RM: last.estimated1RM,
-          lastDate: last.date
+          lastDate: last.date,
         };
       }
     });
 
-    const recentFeelings = Object.entries(feelings)
+    const recentFeelings = Object.entries(feelings || {})
       .sort(([a], [b]) => new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00'))
       .slice(0, 5);
 
-    // Current plan summary
     const planSummary = trainingPlan?.plan
-      ? Object.entries(trainingPlan.plan).map(([day, w]) => {
-          const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[day];
-          const exList = (w.exercises || []).map(e => `${e.name}${e.weight ? ` (${e.weight})` : ''}${e.reps ? ` ${e.reps}` : ''}`).join(', ');
-          return `${dayName}: ${w.name} [${w.intensity}] — ${exList || 'Sin ejercicios'}`;
+      ? Object.entries(trainingPlan.plan.days || trainingPlan.plan).map(([day, w]) => {
+          const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[day] || day;
+          const exList = (w.exercises || []).map(e => e.name).join(', ');
+          return `${dayName}: ${w.name || w.focus || ''} — ${exList || 'Sin ejercicios'}`;
         }).join('\n')
-      : 'Plan no disponible';
+      : 'Sin plan activo';
 
-    // Active cycle
-    const activeCycle = trainingCycles?.cycles?.find(c => c.id === trainingCycles?.activeCycleId);
+    const activeCycle = (trainingCycles || []).find(c => c.id === trainingPlan?.activeCycleId);
 
-    // Top PRs
     const topPRs = Object.entries(personalRecords || {})
       .slice(0, 8)
-      .map(([ex, r]) => `${ex}: ${r.bestWeight?.weight ?? '—'}kg × ${r.bestWeight?.reps ?? '—'} (1RM: ${r.best1RM?.estimated1RM ?? '—'}kg)`);
+      .map(([ex, r]) => `${ex}: ${r.bestWeight?.weight ?? '—'}kg × ${r.bestWeight?.reps ?? '—'} (1RM ~${r.best1RM?.estimated1RM ?? '—'}kg)`);
 
-    // Progression hints
     const readyToProgress = Object.entries(progressionTargets || {})
       .filter(([, t]) => t.readyToProgress)
       .map(([ex, t]) => `${ex} (${t.currentTargetWeight}kg, ${t.sessionsAtCurrentWeight} sesiones)`);
 
-    // Body metrics
     const latestMetric = (bodyMetrics?.entries || []).slice(-1)[0];
 
-    return `=== PERFIL COMPLETO DE RUBÉN ===
-${JSON.stringify(RUBEN_PROFILE, null, 2)}
+    return `${buildMemoryPrompt(aiMemory)}
 
 === FECHA ACTUAL ===
 ${todayInfo.fullDate} (${todayInfo.dayName})
@@ -263,191 +193,165 @@ ${todayInfo.fullDate} (${todayInfo.dayName})
 ${planSummary}
 Última actualización: ${trainingPlan?.updatedAt ? new Date(trainingPlan.updatedAt).toLocaleDateString('es-ES') : 'N/A'}
 
-${activeCycle ? `=== CICLO DE ENTRENAMIENTO ACTIVO ===
-Nombre: ${activeCycle.name}
-Semanas: ${activeCycle.totalWeeks} | Inicio: ${activeCycle.startDate}
-Fases: ${activeCycle.phases?.map(p => `${p.name} (${p.type}, semanas ${p.weeks?.join(',')}, ${p.repScheme})`).join(' → ')}
+${activeCycle ? `=== CICLO ACTIVO ===
+${activeCycle.name} | ${activeCycle.totalWeeks} semanas | Inicio: ${activeCycle.startDate}
 ` : ''}
+=== HOY ===
+${todayHasWorkout
+  ? `Entrenado (${todayInfo.dateKey}):\n${Object.entries(todayWorkout).map(([ex, sets]) => `${ex}: ${Object.entries(sets).map(([n, d]) => `S${n}=${d.weight}kg×${d.reps}`).join(', ')}`).join('\n')}`
+  : `Sin entrenamiento registrado hoy (${todayInfo.dateKey})`}
 
-=== ENTRENAMIENTO DE HOY ===
-${todayHasWorkout ? `Registrado (${todayInfo.dateKey}):
-${Object.entries(todayWorkout).map(([ex, sets]) =>
-  `${ex}: ${Object.entries(sets).map(([n, d]) => `S${n}=${d.weight}kg×${d.reps}`).join(', ')}`
-).join('\n')}` : `Sin registro hoy (${todayInfo.dateKey})`}
-
-=== ENTRENAMIENTOS RECIENTES ===
+=== ÚLTIMOS ENTRENAMIENTOS ===
 ${recentWorkouts.map(([date, ex]) => {
-  const meta = metadata[date];
-  return `${date}: ${Object.keys(ex).slice(0, 4).join(', ')} | ${meta?.duration || '—'} | ${meta?.volume || '—'}`;
-}).join('\n')}
+  const meta = (workoutMeta || {})[date];
+  return `${date}: ${Object.keys(ex).slice(0, 4).join(', ')}${meta?.duration ? ` | ${meta.duration}` : ''}`;
+}).join('\n') || 'Sin datos'}
 
-=== PROGRESIÓN (top ${Object.keys(progressions).length} ejercicios) ===
+=== PROGRESIÓN ===
 ${Object.entries(progressions).map(([ex, d]) =>
-  `${ex}: ${d.startWeight}kg → ${d.currentWeight}kg (+${d.progress}kg en ${d.sessions} sesiones, 1RM: ${d.current1RM?.toFixed(1)}kg)`
-).join('\n')}
+  `${ex}: ${d.startWeight}→${d.currentWeight}kg (+${d.progress}kg, ${d.sessions} sesiones)`
+).join('\n') || 'Sin datos suficientes'}
 
-${readyToProgress.length > 0 ? `=== LISTOS PARA SUBIR PESO ===
-${readyToProgress.join('\n')}
-` : ''}
+${readyToProgress.length > 0 ? `=== LISTOS PARA SUBIR PESO ===\n${readyToProgress.join('\n')}\n` : ''}
 
-=== RÉCORDS PERSONALES ===
-${topPRs.join('\n') || 'Sin récords registrados'}
+=== RECORDS PERSONALES ===
+${topPRs.join('\n') || 'Sin récords'}
 
 === SENSACIONES RECIENTES ===
-${recentFeelings.map(([date, f]) => `${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10, Motivación ${f.motivation}/10`).join('\n') || 'Sin datos'}
+${recentFeelings.map(([date, f]) => `${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10`).join('\n') || 'Sin datos'}
 
-${latestMetric ? `=== MÉTRICAS CORPORALES ===
-Última medición (${latestMetric.date}): ${latestMetric.weight}kg${latestMetric.waistCm ? `, Cintura: ${latestMetric.waistCm}cm` : ''}
-` : ''}
+${latestMetric ? `=== MÉTRICAS CORPORALES ===\nÚltima (${latestMetric.date}): ${latestMetric.weight}kg${latestMetric.waistCm ? `, cintura ${latestMetric.waistCm}cm` : ''}\n` : ''}
 
-=== STATS GLOBALES ===
-Total entrenamientos: ${Object.keys(workoutLogs).filter(d => Object.keys(workoutLogs[d]).length > 0).length}
+=== ESTADÍSTICAS ===
+Total entrenamientos: ${Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length}
 Ejercicios únicos: ${exercises.length}
-Más frecuentes: ${topExercises.slice(0, 5).join(', ')}
 
-=== CAPACIDADES DEL COACH ===
-Tienes herramientas para modificar la app directamente: replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets.
-Úsalas cuando el usuario pida cambios en su rutina, ciclo o ejercicios. Siempre explica los cambios.`;
+=== HERRAMIENTAS DISPONIBLES ===
+Puedes usar: replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets, read_current_plan.
+Úsalas cuando el usuario pida cambios. Explica siempre qué hiciste y por qué.`;
   };
 
-  // ─── API Call with Tool Use ─────────────────────────────────────────────────
-  const callGroqAPIWithTools = async (context, conversationHistory, newMessage) => {
+  // ─── Groq API Call ──────────────────────────────────────────────────────────
+  const callGroq = async (context, history, newMessage) => {
     const apiMessages = [
       {
         role: 'system',
-        content: `Eres el entrenador personal de Rubén y gestor de su app de entrenamiento. Eres experto, directo, práctico y motivador. Cuando el usuario pida cambios en su rutina o plan, USA las herramientas disponibles para aplicarlos directamente en la app — no solo respondas con texto. Siempre explica brevemente qué cambios hiciste y por qué.
+        content: `Eres el coach personal de ${displayName || 'este usuario'} y gestor de su app de entrenamiento. Eres experto, directo, práctico y motivador. Cuando el usuario pida cambios, USA las herramientas para aplicarlos directamente.
 
-CONTEXTO COMPLETO:
-${context}`
-      }
+${context}`,
+      },
+      ...history.slice(1)
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) })),
+      { role: 'user', content: newMessage },
     ];
 
-    // Add conversation history (skip welcome message)
-    const convMessages = conversationHistory
-      .slice(1)
-      .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-      .map(msg => ({ role: msg.role, content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }));
-
-    apiMessages.push(...convMessages);
-    apiMessages.push({ role: 'user', content: newMessage });
-
-    // First API call — with tools
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: apiMessages,
         tools: AI_TOOLS,
         tool_choice: 'auto',
         temperature: 0.7,
-        max_tokens: 2000
-      })
+        max_tokens: 2000,
+      }),
     });
 
-    if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.error?.message || `Error ${response.status}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `Error ${res.status}`);
     }
 
-    const data = await response.json();
+    const data = await res.json();
     const choice = data.choices[0];
 
-    // No tool calls → return text directly
     if (choice.finish_reason !== 'tool_calls' || !choice.message.tool_calls) {
-      return {
-        text: choice.message.content || '',
-        toolResults: []
-      };
+      return { text: choice.message.content || '', toolResults: [] };
     }
 
-    // Execute tool calls
-    const toolCalls = choice.message.tool_calls;
+    // Execute tools — wrap AppDataContext methods to match executeTool's expected API
+    const appState = { trainingPlan, trainingCycles };
+    const appSetters = {
+      // executeTool passes full plan object: { plan, name, version, ... }
+      setTrainingPlan: async (fullPlan) => {
+        const planData = fullPlan.plan || fullPlan;
+        const name = fullPlan.name || trainingPlan?.name || 'Mi Plan';
+        await savePlan(planData, name);
+      },
+      // executeTool passes { cycles: [...], activeCycleId }
+      setTrainingCycles: async (updated) => {
+        const existingIds = (trainingCycles || []).map(c => c.id);
+        const newCycles = (updated.cycles || []).filter(c => !existingIds.includes(c.id));
+        for (const cycle of newCycles) {
+          await saveTrainingCycle(cycle);
+        }
+      },
+    };
     const toolResults = [];
 
-    const appState = { trainingPlan, trainingCycles };
-    const appSetters = { setTrainingPlan: onPlanUpdate, setTrainingCycles: onCyclesUpdate };
-
-    for (const toolCall of toolCalls) {
-      const toolName = toolCall.function.name;
-      let toolArgs;
-      try {
-        toolArgs = JSON.parse(toolCall.function.arguments);
-      } catch {
-        toolArgs = {};
-      }
-
-      const result = await executeTool(toolName, toolArgs, appState, appSetters);
-      toolResults.push({ toolCallId: toolCall.id, toolName, toolArgs, result });
+    for (const tc of choice.message.tool_calls) {
+      let args = {};
+      try { args = JSON.parse(tc.function.arguments); } catch {}
+      const result = await executeTool(tc.function.name, args, appState, appSetters);
+      toolResults.push({ toolCallId: tc.id, toolName: tc.function.name, result });
     }
 
-    // Second API call — with tool results
-    const messagesWithToolResults = [
-      ...apiMessages,
-      choice.message, // assistant's tool call message
-      ...toolResults.map(tr => ({
-        role: 'tool',
-        tool_call_id: tr.toolCallId,
-        content: tr.result.readResult || (tr.result.success ? `Ejecutado: ${tr.result.summary}` : `Error: ${tr.result.summary}`)
-      }))
-    ];
-
-    const response2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // Second call with tool results
+    const res2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
-        messages: messagesWithToolResults,
+        messages: [
+          ...apiMessages,
+          choice.message,
+          ...toolResults.map(tr => ({
+            role: 'tool',
+            tool_call_id: tr.toolCallId,
+            content: tr.result.readResult || (tr.result.success ? `OK: ${tr.result.summary}` : `Error: ${tr.result.summary}`),
+          })),
+        ],
         temperature: 0.7,
-        max_tokens: 1500
-      })
+        max_tokens: 1500,
+      }),
     });
 
-    if (!response2.ok) {
-      const errData = await response2.json();
-      throw new Error(errData.error?.message || `Error ${response2.status}`);
+    if (!res2.ok) {
+      const err = await res2.json();
+      throw new Error(err.error?.message || `Error ${res2.status}`);
     }
 
-    const data2 = await response2.json();
-    return {
-      text: data2.choices[0].message.content || '',
-      toolResults
-    };
+    const data2 = await res2.json();
+    return { text: data2.choices[0].message.content || '', toolResults };
   };
 
-  // ─── Load Proactive Insights ────────────────────────────────────────────────
-  const loadInsights = async (key) => {
-    if (insightsFetched.current || !key) return;
+  // ─── Proactive Insights ─────────────────────────────────────────────────────
+  const loadInsights = async () => {
+    if (insightsFetched.current || !apiKey) return;
+    const totalWorkouts = Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length;
+    if (totalWorkouts < 3) return;
+
     insightsFetched.current = true;
     setInsightsLoading(true);
-
     try {
-      const totalWorkouts = Object.keys(workoutLogs).filter(d => Object.keys(workoutLogs[d]).length > 0).length;
-      if (totalWorkouts < 3) { setInsightsLoading(false); return; }
-
-      const context = await buildCompleteContext();
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const context = buildContext();
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           messages: [
-            { role: 'system', content: `Eres el coach de Rubén. ${context}` },
-            { role: 'user', content: 'Analiza brevemente los datos de Rubén y genera exactamente 3 insights concretos y accionables. Responde SOLO con un JSON array de strings, sin ningún otro texto. Ejemplo: ["Insight 1", "Insight 2", "Insight 3"]' }
+            { role: 'system', content: `Eres el coach de ${displayName}. ${context}` },
+            { role: 'user', content: 'Genera exactamente 3 insights concretos y accionables. Responde SOLO con JSON array de strings: ["Insight 1", "Insight 2", "Insight 3"]' },
           ],
           temperature: 0.6,
-          max_tokens: 400
-        })
+          max_tokens: 400,
+        }),
       });
-
-      if (!response.ok) return;
-      const data = await response.json();
+      if (!res.ok) return;
+      const data = await res.json();
       const content = data.choices[0].message.content.trim();
       const start = content.indexOf('[');
       const end = content.lastIndexOf(']');
@@ -462,54 +366,65 @@ ${context}`
 
   // ─── Send Message ───────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!inputMessage.trim() || !hasApiKey) return;
+    if (!inputMessage.trim() || !hasApiKey || isLoading) return;
 
-    const userMessage = { role: 'user', content: inputMessage, timestamp: new Date() };
     const msgText = inputMessage;
-    setMessages(prev => [...prev, userMessage]);
+    const userMsg = { role: 'user', content: msgText, timestamp: new Date() };
+    setMessages(prev => [...prev, userMsg]);
     setInputMessage('');
     setIsLoading(true);
     setError('');
 
-    // Load insights on first real message
-    if (!insightsFetched.current) loadInsights(apiKey);
+    if (!insightsFetched.current) loadInsights();
 
     try {
-      const context = await buildCompleteContext();
-      const { text, toolResults } = await callGroqAPIWithTools(context, messages, msgText);
+      const context = buildContext();
+      const allMessages = [...messages, userMsg];
+      const { text, toolResults } = await callGroq(context, allMessages, msgText);
 
-      const assistantMessage = {
+      const assistantMsg = {
         role: 'assistant',
         content: text,
         toolResults: toolResults.length > 0 ? toolResults : null,
-        timestamp: new Date()
+        timestamp: new Date(),
       };
+      const newMessages = [...allMessages, assistantMsg];
+      setMessages(newMessages);
 
-      setMessages(prev => [...prev, assistantMessage]);
+      // Extract and save memory updates from this conversation
+      if (newMessages.length % 4 === 0) {
+        extractMemoryDeltaFromConversation(newMessages, aiMemory, apiKey).then(delta => {
+          if (delta) {
+            Object.entries(delta).forEach(([category, updates]) => {
+              updateMemory(category, updates).catch(() => {});
+            });
+          }
+        });
+      }
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `❌ Error: ${err.message}`,
-        timestamp: new Date()
+        timestamp: new Date(),
       }]);
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const handleUndo = (undoData) => {
-    if (undoData?.plan) onPlanUpdate(undoData.plan);
+    if (undoData?.plan) savePlan(undoData.plan.plan || undoData.plan, undoData.plan.name);
     setMessages(prev => [...prev, {
       role: 'assistant',
       content: '↩️ Cambio deshecho. El plan anterior ha sido restaurado.',
-      timestamp: new Date()
+      timestamp: new Date(),
     }]);
   };
 
   const quickPrompts = [
     'Analiza mi progreso general',
-    'Crea un nuevo ciclo de fuerza de 6 semanas',
-    'Actualiza los pesos de mis ejercicios principales',
+    'Crea un ciclo de fuerza de 6 semanas',
+    'Actualiza los pesos de mis ejercicios',
     'Haz un día de piernas más intenso',
     'Programa una semana de descarga',
     '¿Qué ejercicios merezco subir de peso?',
@@ -521,67 +436,53 @@ ${context}`
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
         <button
           onClick={() => { setShowSettings(false); setError(''); }}
-          className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-5 pt-2 transition-colors"
+          className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 mb-6 transition-colors"
         >
-          <ChevronLeft className="w-5 h-5" /><span className="font-medium">Volver</span>
+          <ChevronLeft size={20} /> Volver
         </button>
-
-        <div className="max-w-xl mx-auto">
+        <div className="max-w-md mx-auto">
           <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6 rounded-2xl mb-6">
-            <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
-              <Settings className="w-7 h-7" />
-              Configurar IA
-            </h1>
-            <p className="text-purple-100 text-sm">Groq (Llama 3.3) — Gratis, con herramientas</p>
+            <h1 className="text-xl font-bold flex items-center gap-2"><Key size={20} /> Configurar IA</h1>
+            <p className="text-purple-100 text-sm mt-1">Groq (Llama 3.3 70B) — Gratis, con herramientas</p>
           </div>
 
           {error && (
-            <div className="bg-red-500/20 border border-red-500 rounded-xl p-4 mb-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-red-100 text-sm">{error}</p>
+            <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-4 mb-4">
+              <p className="text-red-300 text-sm">{error}</p>
             </div>
           )}
 
-          <div className="bg-slate-800 rounded-2xl p-6 mb-4">
-            <h3 className="font-bold mb-4">Groq API Key</h3>
-            <div className="bg-green-500/10 border border-green-500/50 rounded-xl p-4 mb-4">
-              <p className="text-sm text-green-300">
-                ✅ 100% GRATIS<br/>
-                ⚡ Ultra rápido (2-3s)<br/>
-                🧠 Llama 3.3 70B<br/>
-                🔧 Con herramientas (gestiona tu app)<br/>
-                ❌ Sin tarjeta de crédito
-              </p>
+          <div className="bg-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-300 space-y-1">
+              <p>✅ 100% gratis — sin tarjeta</p>
+              <p>⚡ Respuestas en 2-3 segundos</p>
+              <p>🧠 Llama 3.3 70B con herramientas</p>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">API Key de Groq:</label>
+            <div>
+              <label className="block text-slate-300 text-sm font-medium mb-1.5">Groq API Key</label>
               <input
                 type="password"
                 value={apiKey}
-                onChange={e => { setApiKey(e.target.value); setError(''); }}
+                onChange={e => setApiKey(e.target.value)}
                 placeholder="gsk_..."
                 className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
-            <div className="bg-blue-500/10 border border-blue-500/50 rounded-xl p-4 mb-4 text-sm">
-              <p className="font-semibold mb-2">⚡ Cómo conseguir API key:</p>
-              <ol className="list-decimal ml-4 space-y-1 text-gray-300">
-                <li>Ve a <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline font-semibold">console.groq.com</a></li>
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-slate-300">
+              <p className="font-semibold text-blue-300 mb-2">Cómo obtener API key:</p>
+              <ol className="list-decimal ml-4 space-y-1">
+                <li>Ve a <span className="text-blue-400">console.groq.com</span></li>
                 <li>Crea cuenta con Google</li>
-                <li>Click en "API Keys" → "Create API Key"</li>
-                <li>Copia la key (gsk_...) y pégala aquí</li>
+                <li>API Keys → Create API Key</li>
+                <li>Copia la key y pégala aquí</li>
               </ol>
             </div>
             <button
               onClick={saveApiKey}
               disabled={!apiKey.trim()}
-              className={`w-full font-semibold py-3 rounded-xl transition-all ${
-                apiKey.trim()
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
-                  : 'bg-slate-700 text-gray-500 cursor-not-allowed'
-              }`}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-all"
             >
-              {apiKey.trim() ? '✅ Guardar y activar' : 'Ingresa una API key'}
+              Guardar y activar
             </button>
           </div>
         </div>
@@ -589,50 +490,47 @@ ${context}`
     );
   }
 
-  // ─── Main Chat Screen ───────────────────────────────────────────────────────
+  // ─── Main Screen ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col">
+    <div className="h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 flex items-center justify-between shadow-lg flex-shrink-0">
-        <button onClick={onClose} className="flex items-center gap-1 text-purple-100 hover:text-white transition-colors">
-          <ChevronLeft className="w-5 h-5" /><span className="text-sm font-medium">Volver</span>
-        </button>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Brain className="w-6 h-6" />
-          Coach IA
-          <span className="text-xs bg-white/20 px-2 py-1 rounded">+ Herramientas</span>
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        {onClose ? (
+          <button onClick={onClose} className="flex items-center gap-1 text-purple-100 hover:text-white transition-colors">
+            <ChevronLeft size={20} /> <span className="text-sm font-medium">Volver</span>
+          </button>
+        ) : <div className="w-16" />}
+        <h1 className="text-lg font-bold flex items-center gap-2">
+          <Brain size={20} /> Coach IA
         </h1>
         <div className="flex items-center gap-2">
           {messages.length > 1 && (
-            <button onClick={resetConversation} className="text-purple-100 hover:text-white" title="Reiniciar">
-              <RotateCcw className="w-5 h-5" />
+            <button onClick={resetConversation} className="text-purple-200 hover:text-white">
+              <RotateCcw size={18} />
             </button>
           )}
-          <button onClick={() => setShowSettings(true)} className="text-purple-100 hover:text-white">
-            <Settings className="w-6 h-6" />
+          <button onClick={() => setShowSettings(true)} className="text-purple-200 hover:text-white">
+            <Settings size={20} />
           </button>
         </div>
       </div>
 
       {!hasApiKey ? (
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center max-w-md">
-            <Sparkles className="w-16 h-16 mx-auto mb-4 text-purple-400" />
+          <div className="text-center max-w-sm">
+            <Sparkles size={48} className="mx-auto mb-4 text-purple-400" />
             <h2 className="text-xl font-bold mb-2">Activa tu Coach IA</h2>
-            <p className="text-gray-400 mb-4">Gestiona tu entrenamiento con IA. Gratis con Groq.</p>
-            <div className="bg-purple-500/10 border border-purple-500/50 rounded-xl p-4 mb-6 text-sm text-left">
-              <p className="font-semibold mb-2 text-purple-300">🔧 Tu coach puede:</p>
-              <ul className="space-y-1 text-gray-300 ml-4 list-disc">
-                <li>Crear y modificar tu rutina semanal</li>
-                <li>Diseñar ciclos periodizados</li>
-                <li>Actualizar objetivos de peso</li>
-                <li>Analizar tu progreso completo</li>
-                <li>Detectar estancamientos</li>
-              </ul>
-            </div>
+            <p className="text-slate-400 mb-6">Gestión inteligente de tu entrenamiento. Gratis con Groq.</p>
+            <ul className="text-left bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 mb-6 text-sm text-slate-300 space-y-1.5">
+              <li>🏋️ Crear y modificar tu rutina semanal</li>
+              <li>🎯 Diseñar ciclos periodizados</li>
+              <li>📈 Actualizar objetivos de peso</li>
+              <li>🔍 Analizar tu progreso completo</li>
+              <li>🧠 Recordar tu perfil entre conversaciones</li>
+            </ul>
             <button
               onClick={() => setShowSettings(true)}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold py-3 px-6 rounded-xl shadow-lg"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold py-3 px-6 rounded-xl"
             >
               Configurar ahora (2 min)
             </button>
@@ -640,12 +538,13 @@ ${context}`
         </div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Insights panel */}
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-2">
+            {/* Insights */}
             {(insightsLoading || insights) && (
               <div className="bg-slate-800/60 border border-slate-700/40 rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Zap className="w-4 h-4 text-amber-400" />
+                  <Zap size={14} className="text-amber-400" />
                   <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Insights de hoy</span>
                 </div>
                 {insightsLoading ? (
@@ -657,7 +556,7 @@ ${context}`
                   <ul className="space-y-2">
                     {insights.map((insight, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-slate-200">
-                        <span className="text-amber-400 mt-0.5 flex-shrink-0">•</span>
+                        <span className="text-amber-400 mt-0.5">•</span>
                         {insight}
                       </li>
                     ))}
@@ -669,11 +568,10 @@ ${context}`
             {/* Messages */}
             {messages.map((msg, idx) => (
               <div key={idx}>
-                {/* Tool results (action cards) */}
-                {msg.toolResults && msg.toolResults.map((tr, tidx) => (
+                {msg.toolResults?.map((tr, ti) =>
                   tr.result.readResult ? null : (
                     <ActionCard
-                      key={tidx}
+                      key={ti}
                       toolName={tr.toolName}
                       summary={tr.result.summary}
                       success={tr.result.success}
@@ -681,19 +579,15 @@ ${context}`
                       onUndo={handleUndo}
                     />
                   )
-                ))}
-
-                {/* Message bubble */}
+                )}
                 {msg.content && (
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[85%] rounded-2xl p-4 shadow-lg ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-800 text-gray-100'
+                      msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-100'
                     }`}>
                       {msg.role === 'assistant' && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <Brain className="w-4 h-4 text-purple-400" />
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Brain size={14} className="text-purple-400" />
                           <span className="text-xs text-purple-400 font-semibold">Coach IA</span>
                         </div>
                       )}
@@ -706,30 +600,29 @@ ${context}`
 
             {isLoading && (
               <div className="flex justify-start">
-                <div className="bg-slate-800 rounded-2xl p-4 shadow-lg">
-                  <div className="flex items-center gap-2">
+                <div className="bg-slate-800 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-sm text-slate-400">
                     <div className="animate-spin w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full" />
-                    <span className="text-sm text-gray-400">Analizando...</span>
+                    Analizando...
                   </div>
                 </div>
               </div>
             )}
-
             <div ref={messagesEndRef} />
           </div>
 
           {/* Quick prompts */}
           {messages.length === 1 && (
             <div className="px-4 pb-2 flex-shrink-0">
-              <p className="text-xs text-gray-500 mb-2">Sugerencias:</p>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {quickPrompts.map((prompt, idx) => (
+              <p className="text-xs text-slate-500 mb-2">Sugerencias:</p>
+              <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {quickPrompts.map((p, i) => (
                   <button
-                    key={idx}
-                    onClick={() => setInputMessage(prompt)}
-                    className="bg-slate-800 hover:bg-slate-700 text-sm px-3 py-2 rounded-full whitespace-nowrap transition-colors border border-slate-700/50 text-slate-300"
+                    key={i}
+                    onClick={() => setInputMessage(p)}
+                    className="bg-slate-800 hover:bg-slate-700 text-sm px-3 py-2 rounded-full whitespace-nowrap border border-slate-700/50 text-slate-300 flex-shrink-0 transition-colors"
                   >
-                    {prompt}
+                    {p}
                   </button>
                 ))}
               </div>
@@ -737,33 +630,24 @@ ${context}`
           )}
 
           {/* Input */}
-          <div className="p-4 bg-slate-900 border-t border-slate-700 flex-shrink-0">
+          <div className="px-4 pb-safe pb-20 pt-3 bg-slate-900/80 border-t border-slate-800 flex-shrink-0">
             <div className="flex gap-2">
               <input
                 type="text"
                 value={inputMessage}
                 onChange={e => setInputMessage(e.target.value)}
-                onKeyPress={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                placeholder="Pide un cambio de rutina, análisis, ciclo..."
-                className="flex-1 bg-slate-800 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                placeholder="Pide cambios, análisis, un nuevo ciclo..."
+                className="flex-1 bg-slate-800 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
               />
               <button
                 onClick={sendMessage}
                 disabled={!inputMessage.trim() || isLoading}
-                className={`px-5 py-3 rounded-xl font-semibold transition-all ${
-                  inputMessage.trim() && !isLoading
-                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg'
-                    : 'bg-slate-700 text-gray-500 cursor-not-allowed'
-                }`}
+                className="px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 disabled:opacity-40 text-white transition-all"
               >
-                <MessageCircle className="w-5 h-5" />
+                <MessageCircle size={20} />
               </button>
             </div>
-            {messages.length > 1 && (
-              <p className="text-xs text-gray-500 mt-2 text-center">
-                🔧 El coach puede modificar tu app directamente
-              </p>
-            )}
           </div>
         </>
       )}

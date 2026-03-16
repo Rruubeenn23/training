@@ -2,7 +2,7 @@
  * Helper functions para manejo de storage con AUTO-SYNC a Supabase
  */
 
-import { autoSyncWorkout, autoSyncFeeling, autoSyncNutrition } from './database';
+// Auto-sync functions moved to AppDataContext (Supabase-first architecture)
 
 const STORAGE_KEYS = {
   WORKOUT_LOGS: 'workout-logs',
