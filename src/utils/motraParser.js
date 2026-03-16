@@ -3,6 +3,7 @@
  * Convierte el texto compartido en un objeto estructurado
  */
 
+import { parseDateFromMotra, getDayNameFromDateKey, formatDateDisplay } from './dateUtils';
 export function parseMotraWorkout(text) {
   const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
   
@@ -191,55 +192,14 @@ export function isValidMotraWorkout(text) {
 }
 
 /**
- * Parse fecha de Motra a formato ISO - CORREGIDO
- * Ejemplo: "11 feb 2026, 18:36" → "2026-02-11"
+ * Re-export from dateUtils for backward compatibility
  */
-export function parseDateFromMotra(dateText) {
-  try {
-    // Buscar patrón: "11 feb 2026" o "11 feb 2026, 18:36"
-    const match = dateText.match(/(\d{1,2})\s+(\w{3})\s+(\d{4})/);
-    if (!match) return null;
-
-    const [_, day, monthStr, year] = match;
-    
-    // Mapa de meses en español (3 letras)
-    const monthMap = {
-      'ene': 0, 'feb': 1, 'mar': 2, 'abr': 3, 'may': 4, 'jun': 5,
-      'jul': 6, 'ago': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dic': 11
-    };
-
-    const monthNum = monthMap[monthStr.toLowerCase()];
-    if (monthNum === undefined) return null;
-
-    // Crear fecha en UTC para evitar problemas de zona horaria
-    const date = new Date(Date.UTC(parseInt(year), monthNum, parseInt(day)));
-    
-    // Retornar en formato ISO (YYYY-MM-DD)
-    return date.toISOString().split('T')[0];
-  } catch (error) {
-    console.error('Error parsing date:', error);
-    return null;
-  }
-}
+export { parseDateFromMotra } from './dateUtils';
+export { formatDateDisplay } from './dateUtils';
 
 /**
  * Obtener nombre del día de la semana en español
  */
 export function getDayName(dateString) {
-  const date = new Date(dateString + 'T12:00:00'); // Agregar hora para evitar issues de timezone
-  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  return days[date.getDay()];
-}
-
-/**
- * Formatear fecha para mostrar
- */
-export function formatDateDisplay(dateString) {
-  const date = new Date(dateString + 'T12:00:00');
-  return date.toLocaleDateString('es-ES', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
+  return getDayNameFromDateKey(dateString);
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import {
   loadAllUserData,
@@ -15,6 +15,10 @@ import { mergeMemoryDelta } from '../utils/aiMemory';
 import { getTodayDateKey } from '../utils/dateUtils';
 
 const AppDataContext = createContext(null);
+
+// ─── Offline Queue Helpers ─────────────────────────────────────────────────────
+const OFFLINE_QUEUE_KEY = 'offline-sync-queue';
+const MAX_RETRIES = 5;
 
 export function AppDataProvider({ children }) {
   const { user } = useAuth();
@@ -34,15 +38,7 @@ export function AppDataProvider({ children }) {
   const [dataLoading, setDataLoading] = useState(false);
 
   // Load all data when user logs in
-  useEffect(() => {
-    if (user) {
-      loadData();
-    } else {
-      clearData();
-    }
-  }, [user?.id]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return;
     setDataLoading(true);
     try {
@@ -89,10 +85,19 @@ export function AppDataProvider({ children }) {
       console.error('Error loading data:', err);
     }
     setDataLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadData();
+    } else {
+      clearData();
+    }
+  }, [user?.id, loadData]);
 
   const clearData = () => {
     setWorkoutLog({});
+    setWorkoutMeta({});
     setTrainingPlan(null);
     setTrainingCycles([]);
     setPersonalRecords({});
@@ -243,11 +248,54 @@ export function AppDataProvider({ children }) {
   // ─── Offline Queue ──────────────────────────────────────────
   const queueOfflineSync = (type, key, payload) => {
     try {
-      const queue = JSON.parse(localStorage.getItem('offline-sync-queue') || '[]');
+      const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
       queue.push({ id: `${type}-${key}-${Date.now()}`, type, key, payload, retries: 0 });
-      localStorage.setItem('offline-sync-queue', JSON.stringify(queue));
-    } catch {}
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    } catch (err) {
+      console.error('Failed to queue offline sync:', err);
+    }
   };
+
+  const drainOfflineQueue = useCallback(async () => {
+    if (!user) return;
+    let queue;
+    try {
+      queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+    } catch { return; }
+    if (queue.length === 0) return;
+
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        if (item.type === 'workout') {
+          await upsertWorkout(user.id, item.key, item.payload.exercises, item.payload.metadata || {});
+        } else if (item.type === 'feeling') {
+          await upsertFeeling(user.id, item.key, item.payload);
+        } else if (item.type === 'nutrition') {
+          await upsertNutrition(user.id, item.key, item.payload);
+        }
+        // Success — don't re-add to queue
+      } catch {
+        if ((item.retries || 0) < MAX_RETRIES) {
+          remaining.push({ ...item, retries: (item.retries || 0) + 1 });
+        }
+        // Drop items that have exceeded MAX_RETRIES
+      }
+    }
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    if (remaining.length === 0 && queue.length > 0) {
+      console.info(`Offline queue drained: ${queue.length} items synced successfully`);
+    }
+  }, [user]);
+
+  // Drain queue on mount and when coming back online
+  useEffect(() => {
+    if (!user) return;
+    drainOfflineQueue();
+    const handleOnline = () => drainOfflineQueue();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user, drainOfflineQueue]);
 
   const value = {
     // State

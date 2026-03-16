@@ -64,10 +64,12 @@ function AuthGate({ children }) {
   if (isLoading) return <AppLoading />;
   if (user && isOnboardingComplete) {
     const target = localStorage.getItem('post_auth_redirect');
-    if (target && !['/auth', '/onboarding', '/'].includes(target)) {
+    const isSafe = target && target.startsWith('/') && !target.startsWith('//') && !target.includes(':');
+    if (isSafe && !['/auth', '/onboarding', '/'].includes(target)) {
       localStorage.removeItem('post_auth_redirect');
       return <Navigate to={target} replace />;
     }
+    localStorage.removeItem('post_auth_redirect');
     return <Navigate to="/home" replace />;
   }
   if (user && !isOnboardingComplete) return <Navigate to="/onboarding" replace />;

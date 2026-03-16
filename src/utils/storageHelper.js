@@ -2,6 +2,8 @@
  * Helper functions para manejo de storage con AUTO-SYNC a Supabase
  */
 
+import { calculate1RM } from './progressionEngine';
+
 // Auto-sync functions moved to AppDataContext (Supabase-first architecture)
 
 const STORAGE_KEYS = {
@@ -38,19 +40,7 @@ export async function getWorkoutLogs() {
  */
 export async function saveWorkoutLogs(logs) {
   try {
-    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.WORKOUT_LOGS, JSON.stringify(logs));
-    
-    // Auto-sync: Sincronizar CADA workout modificado a Supabase
-    // Esto asegura que cualquier cambio se suba automáticamente
-    const metadata = await getWorkoutMetadata();
-    for (const [dateKey, exercises] of Object.entries(logs)) {
-      if (Object.keys(exercises).length > 0) {
-        // Sync en background sin esperar
-        autoSyncWorkout(dateKey, exercises, metadata[dateKey]);
-      }
-    }
-    
     return true;
   } catch (error) {
     console.error('Error saving workout logs:', error);
@@ -63,23 +53,12 @@ export async function saveWorkoutLogs(logs) {
  */
 export async function saveWorkoutForDate(dateKey, exercises, metadata = null) {
   try {
-    // Obtener logs existentes
     const allLogs = await getWorkoutLogs();
-    
-    // Actualizar el día específico
     allLogs[dateKey] = exercises;
-    
-    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.WORKOUT_LOGS, JSON.stringify(allLogs));
-    
-    // Guardar metadata si se proporciona
     if (metadata) {
       await saveWorkoutMetadata(dateKey, metadata);
     }
-    
-    // Auto-sync INMEDIATO para este workout
-    await autoSyncWorkout(dateKey, exercises, metadata);
-    
     return true;
   } catch (error) {
     console.error('Error saving workout for date:', error);
@@ -138,13 +117,7 @@ export async function saveDailyFeeling(dateKey, feeling) {
   try {
     const allFeelings = await getDailyFeelings();
     allFeelings[dateKey] = feeling;
-    
-    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.FEELINGS, JSON.stringify(allFeelings));
-    
-    // Auto-sync INMEDIATO
-    await autoSyncFeeling(dateKey, feeling);
-    
     return true;
   } catch (error) {
     console.error('Error saving feeling:', error);
@@ -172,13 +145,7 @@ export async function saveNutritionLog(dateKey, nutritionData) {
   try {
     const allNutrition = await getNutritionLogs();
     allNutrition[dateKey] = nutritionData;
-    
-    // Guardar localmente
     await window.storage.set(STORAGE_KEYS.NUTRITION, JSON.stringify(allNutrition));
-    
-    // Auto-sync INMEDIATO
-    await autoSyncNutrition(dateKey, nutritionData);
-    
     return true;
   } catch (error) {
     console.error('Error saving nutrition:', error);
@@ -363,11 +330,7 @@ function calculateBestSet(sets) {
   };
 }
 
-function calculate1RM(weight, reps) {
-  // Fórmula de Epley
-  if (reps === 1) return weight;
-  return weight * (1 + reps / 30);
-}
+
 
 /**
  * Get all unique exercises
