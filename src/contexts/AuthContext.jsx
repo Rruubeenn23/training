@@ -18,7 +18,12 @@ export function AuthProvider({ children }) {
 
     // Get initial session
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+      .then(async ({ data: { session } }) => {
+        // If session exists but is expired, refresh it once
+        if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          session = refreshed?.session || session;
+        }
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) loadProfile(session.user.id);
@@ -49,6 +54,18 @@ export function AuthProvider({ children }) {
     } else {
       setLocalOnboardingComplete(false);
     }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const handler = () => {
+      if (user?.id) {
+        const key = `onboarding_complete_${user.id}`;
+        const flag = localStorage.getItem(key) === 'true';
+        setLocalOnboardingComplete(flag);
+      }
+    };
+    window.addEventListener('onboarding-local-update', handler);
+    return () => window.removeEventListener('onboarding-local-update', handler);
   }, [user?.id]);
 
   useEffect(() => {
@@ -109,6 +126,7 @@ export function AuthProvider({ children }) {
     if (user?.id) {
       localStorage.removeItem(`onboarding_complete_${user.id}`);
     }
+    localStorage.removeItem('post_auth_redirect');
   };
 
   const resetPassword = async (email) => {

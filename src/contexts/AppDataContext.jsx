@@ -65,6 +65,19 @@ export function AppDataProvider({ children }) {
       setAiMemory(data.aiMemory);
       setUserSettings(data.settings || {});
 
+      // If the user already has data, assume onboarding completed locally
+      if (user?.id) {
+        const hasAnyData =
+          (data.trainingPlan && data.trainingPlan.plan) ||
+          Object.keys(data.workoutLogs || {}).length > 0 ||
+          Object.keys(data.feelings || {}).length > 0 ||
+          Object.keys(data.nutrition || {}).length > 0;
+        if (hasAnyData) {
+          localStorage.setItem(`onboarding_complete_${user.id}`, 'true');
+          window.dispatchEvent(new Event('onboarding-local-update'));
+        }
+      }
+
       // Recalculate derived data
       const streak = calculateStreak(data.workoutLogs || {});
       setWorkoutStreak(streak);

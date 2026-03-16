@@ -26,7 +26,7 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+    <div className="min-h-screen text-white">
       <div className="flex-1 overflow-y-auto">
         <Outlet />
       </div>

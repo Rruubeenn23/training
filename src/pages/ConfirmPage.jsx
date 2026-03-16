@@ -1,13 +1,26 @@
 import React, { useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function ConfirmPage() {
   useEffect(() => {
-    const t = setTimeout(() => {
+    const run = async () => {
       const query = window.location.search || '';
       const hash = window.location.hash || '';
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get('code');
+      const params = new URLSearchParams(hash.replace('#', ''));
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+
+      if (supabase && code) {
+        await supabase.auth.exchangeCodeForSession(code).catch(() => {});
+      } else if (supabase && access_token && refresh_token) {
+        await supabase.auth.setSession({ access_token, refresh_token }).catch(() => {});
+      }
+
       window.location.replace('/auth/callback' + query + hash);
-    }, 900);
-    return () => clearTimeout(t);
+    };
+    run();
   }, []);
 
   return (
