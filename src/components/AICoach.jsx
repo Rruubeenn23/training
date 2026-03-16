@@ -12,6 +12,15 @@ import { getTodayFullInfo } from '../utils/dateUtils';
 import { AI_TOOLS, executeTool } from '../utils/aiTools';
 
 // ─── Action Card ──────────────────────────────────────────────────────────────
+const COMMUNITY_TIPS = [
+  'En sentadillas, mejora la estabilidad con respiración diafragmática y braceo antes de bajar.',
+  'Para hipertrofia, mantén 1-3 repeticiones en recámara y controla la fase excéntrica.',
+  'Si estancas en press banca, añade pausas de 1-2s en el pecho por 3-4 semanas.',
+  'La mejor progresión suele ser: más reps → mismo peso → subir peso.',
+  'Dormir 7-9h y mantener proteína constante acelera la recuperación.',
+  'La técnica consistente vale más que subir peso cada semana.'
+];
+
 function ActionCard({ toolName, summary, success, undoData, onUndo }) {
   const [undone, setUndone] = useState(false);
   const ICONS = {
@@ -60,8 +69,8 @@ export default function AICoach({ preloadedMessage, onClose }) {
   const {
     workoutLog, workoutMeta, trainingPlan, trainingCycles,
     personalRecords, progressionTargets, bodyMetrics,
-    feelings, aiMemory, userSettings,
-    savePlan, saveTrainingCycle, updateMemory,
+    feelings, nutrition, aiMemory, userSettings,
+    savePlan, saveTrainingCycle, updateMemory, saveSettings,
   } = useAppData();
 
   const [apiKey, setApiKey] = useState('');
@@ -94,6 +103,8 @@ export default function AICoach({ preloadedMessage, onClose }) {
   }, [messages, isLoading]);
 
   const envKey = import.meta.env.VITE_GROQ_API_KEY || '';
+  const coachMode = userSettings?.coach_mode || 'mixto';
+  const coachStyle = userSettings?.coach_style || 'motivador';
 
   const saveApiKey = () => {
     if (!apiKey.trim()) return;
@@ -111,7 +122,7 @@ export default function AICoach({ preloadedMessage, onClose }) {
       role: 'assistant',
       content: `¡Hola, ${name}! Hoy es **${todayInfo.dayName} ${new Date().getDate()} de ${new Date().toLocaleDateString('es-ES', { month: 'long' })}**.
 
-Soy tu coach IA. Puedo analizar tu progreso y **gestionar directamente tu app**:
+Soy tu equipo profesional: **entrenador, nutricionista y asesor de salud**. Puedo analizar tu progreso y **gestionar directamente tu app**:
 
 • Crear o modificar tu rutina semanal
 • Diseñar ciclos de entrenamiento periodizados
@@ -169,6 +180,24 @@ Soy tu coach IA. Puedo analizar tu progreso y **gestionar directamente tu app**:
       .sort(([a], [b]) => new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00'))
       .slice(0, 5);
 
+    const nutritionEntries = Object.entries(nutrition || {});
+    const nutritionAvg = nutritionEntries.length > 0 ? (() => {
+      const totals = nutritionEntries.reduce((acc, [, n]) => {
+        acc.protein += n.protein || 0;
+        acc.carbs += n.carbs || 0;
+        acc.fats += n.fats || 0;
+        acc.water += n.water || 0;
+        return acc;
+      }, { protein: 0, carbs: 0, fats: 0, water: 0 });
+      const count = nutritionEntries.length;
+      return {
+        protein: Math.round(totals.protein / count),
+        carbs: Math.round(totals.carbs / count),
+        fats: Math.round(totals.fats / count),
+        water: Math.round(totals.water / count),
+      };
+    })() : null;
+
     const planSummary = trainingPlan?.plan
       ? Object.entries(trainingPlan.plan.days || trainingPlan.plan).map(([day, w]) => {
           const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[day] || day;
@@ -193,6 +222,12 @@ Soy tu coach IA. Puedo analizar tu progreso y **gestionar directamente tu app**:
 
 === FECHA ACTUAL ===
 ${todayInfo.fullDate} (${todayInfo.dayName})
+
+=== PREFERENCIAS DEL COACH ===
+Modo: ${coachMode} | Estilo: ${coachStyle}
+
+=== CONOCIMIENTO COMPARTIDO ===
+${COMMUNITY_TIPS.map(t => `- ${t}`).join('\n')}
 
 === PLAN SEMANAL ACTUAL ===
 ${planSummary}
@@ -225,6 +260,8 @@ ${topPRs.join('\n') || 'Sin récords'}
 === SENSACIONES RECIENTES ===
 ${recentFeelings.map(([date, f]) => `${date}: Energía ${f.energy}/10, Sueño ${f.sleep}/10`).join('\n') || 'Sin datos'}
 
+${nutritionAvg ? `=== NUTRICIÓN (PROMEDIO) ===\nProteína ${nutritionAvg.protein}g, Carbs ${nutritionAvg.carbs}g, Grasas ${nutritionAvg.fats}g, Agua ${nutritionAvg.water} vasos\n` : ''}
+
 ${latestMetric ? `=== MÉTRICAS CORPORALES ===\nÚltima (${latestMetric.date}): ${latestMetric.weight}kg${latestMetric.waistCm ? `, cintura ${latestMetric.waistCm}cm` : ''}\n` : ''}
 
 === ESTADÍSTICAS ===
@@ -241,7 +278,10 @@ Puedes usar: replace_weekly_plan, modify_day_workout, create_training_cycle, upd
     const apiMessages = [
       {
         role: 'system',
-        content: `Eres el coach personal de ${displayName || 'este usuario'} y gestor de su app de entrenamiento. Eres experto, directo, práctico y motivador. Cuando el usuario pida cambios, USA las herramientas para aplicarlos directamente.
+        content: `Eres el coach personal de ${displayName || 'este usuario'} y gestor de su app de entrenamiento.
+Eres un **equipo profesional**: entrenador, nutricionista y asesor de salud.
+Responde SIEMPRE en español. Estilo: ${coachStyle}. Modo principal: ${coachMode}.
+Sé práctico, claro y seguro. No hagas diagnósticos médicos ni prescripciones.
 
 ${context}`,
       },
@@ -453,6 +493,10 @@ ${context}`,
     '¿Qué ejercicios merezco subir de peso?',
   ];
 
+  const totalWorkouts = Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length;
+  const readyCount = Object.entries(progressionTargets || {}).filter(([, t]) => t.readyToProgress).length;
+  const lastWorkoutDate = Object.keys(workoutLog || {}).sort((a, b) => new Date(b) - new Date(a))[0];
+
   // ─── Settings Screen ────────────────────────────────────────────────────────
   if (showSettings) {
     return (
@@ -571,6 +615,56 @@ ${context}`,
         </div>
       ) : (
         <>
+          {/* Coach bar */}
+          <div className="px-4 pt-3 pb-2 flex-shrink-0">
+            <div className="bg-slate-800/70 border border-slate-700/50 rounded-2xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-slate-400 uppercase tracking-wider">Modo del coach</p>
+                <span className="text-xs text-slate-500">Estilo: {coachStyle}</span>
+              </div>
+              <div className="flex gap-2 mb-3">
+                {['mixto', 'entrenador', 'nutricion', 'salud'].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => saveSettings({ coach_mode: m })}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                      coachMode === m ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' : 'bg-slate-900/50 text-slate-400 border-slate-700/50'
+                    }`}
+                  >
+                    {m === 'mixto' ? 'Mixto' : m === 'entrenador' ? 'Entrenador' : m === 'nutricion' ? 'Nutrición' : 'Salud'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 mb-3">
+                {['directo', 'motivador', 'tecnico'].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => saveSettings({ coach_style: s })}
+                    className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                      coachStyle === s ? 'bg-purple-500/20 text-purple-300 border-purple-400/40' : 'bg-slate-900/50 text-slate-400 border-slate-700/50'
+                    }`}
+                  >
+                    {s === 'directo' ? 'Directo' : s === 'motivador' ? 'Motivador' : 'Técnico'}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-slate-900/60 rounded-xl py-2 text-xs">
+                  <div className="text-slate-400">Entrenos</div>
+                  <div className="text-white font-semibold">{totalWorkouts}</div>
+                </div>
+                <div className="bg-slate-900/60 rounded-xl py-2 text-xs">
+                  <div className="text-slate-400">Listos subir</div>
+                  <div className="text-white font-semibold">{readyCount}</div>
+                </div>
+                <div className="bg-slate-900/60 rounded-xl py-2 text-xs">
+                  <div className="text-slate-400">Último</div>
+                  <div className="text-white font-semibold">{lastWorkoutDate || '—'}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-2">
             {/* Insights */}
@@ -615,8 +709,8 @@ ${context}`,
                 )}
                 {msg.content && (
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-2xl p-4 shadow-lg ${
-                      msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-100'
+                  <div className={`max-w-[85%] rounded-2xl p-4 shadow-lg ${
+                      msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-100'
                     }`}>
                       {msg.role === 'assistant' && (
                         <div className="flex items-center gap-1.5 mb-2">

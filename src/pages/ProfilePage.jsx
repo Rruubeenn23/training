@@ -2,23 +2,53 @@ import React, { useState } from 'react';
 import {
   User, LogOut, Settings, Brain, Key, Edit3, Save,
   Scale, Target, Activity, ChevronRight, Trash2,
-  Moon, Sun, Bell, Download
+  Moon, Sun, Bell, Download, Camera
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppData } from '../contexts/AppDataContext';
 import BodyMetrics from '../components/BodyMetrics';
 import ExportData from '../components/ExportData';
+import ProgressPhotos from '../components/ProgressPhotos';
+import { updateProfile } from '../utils/database';
 
 export default function ProfilePage() {
   const { user, displayName, profile, signOut } = useAuth();
   const { aiMemory, bodyMetrics, userSettings, saveSettings, saveBodyMetric } = useAppData();
-  const [screen, setScreen] = useState(null); // null | 'body' | 'export' | 'settings'
+  const [screen, setScreen] = useState(null); // null | 'body' | 'export' | 'photos'
   const [apiKey, setApiKey] = useState(localStorage.getItem('groq_api_key') || '');
   const [editingKey, setEditingKey] = useState(false);
+  const [avatar, setAvatar] = useState(localStorage.getItem('profile_avatar') || '');
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(profile?.display_name || displayName || '');
 
   const handleSaveApiKey = () => {
     localStorage.setItem('groq_api_key', apiKey.trim());
     setEditingKey(false);
+  };
+
+  const handleAvatarChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('La imagen es demasiado grande. Máximo 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      localStorage.setItem('profile_avatar', dataUrl);
+      setAvatar(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveName = async () => {
+    const name = nameInput.trim();
+    if (!name || !user) return;
+    try {
+      await updateProfile(user.id, { display_name: name });
+      setEditingName(false);
+    } catch {}
   };
 
   const handleSignOut = async () => {
@@ -39,17 +69,39 @@ export default function ProfilePage() {
     return <ExportData onClose={() => setScreen(null)} />;
   }
 
+  if (screen === 'photos') {
+    return <ProgressPhotos onClose={() => setScreen(null)} />;
+  }
+
   return (
     <div className="pb-24 px-4 pt-4 max-w-lg mx-auto space-y-4">
       {/* Profile Header */}
       <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/20 rounded-2xl p-5 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-2xl font-bold text-white">
-            {displayName?.charAt(0)?.toUpperCase() || '?'}
-          </span>
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {avatar ? (
+            <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-2xl font-bold text-white">
+              {displayName?.charAt(0)?.toUpperCase() || '?'}
+            </span>
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white font-bold text-lg truncate">{displayName}</p>
+          {!editingName ? (
+            <div className="flex items-center gap-2">
+              <p className="text-white font-bold text-lg truncate">{displayName}</p>
+              <button onClick={() => setEditingName(true)} className="text-blue-300 text-xs">Editar</button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                className="flex-1 bg-slate-700 text-white rounded-lg px-2 py-1 text-sm"
+              />
+              <button onClick={handleSaveName} className="text-green-300 text-xs">Guardar</button>
+            </div>
+          )}
           <p className="text-slate-400 text-sm truncate">{user?.email}</p>
           {aiMemory?.profile_facts?.experience_level && (
             <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full mt-1 inline-block">
@@ -57,6 +109,10 @@ export default function ProfilePage() {
             </span>
           )}
         </div>
+        <label className="text-xs text-blue-300 cursor-pointer">
+          Foto
+          <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+        </label>
       </div>
 
       {/* AI Memory Summary */}
@@ -102,6 +158,12 @@ export default function ProfilePage() {
           label="Métricas corporales"
           sub={`${(bodyMetrics?.entries || []).length} registros`}
           onClick={() => setScreen('body')}
+        />
+        <MenuItem
+          icon={<Camera size={18} className="text-pink-400" />}
+          label="Fotos de progreso"
+          sub="Comparación visual"
+          onClick={() => setScreen('photos')}
         />
         <MenuItem
           icon={<Download size={18} className="text-blue-400" />}
@@ -176,6 +238,42 @@ export default function ProfilePage() {
           value={userSettings?.notifications !== false}
           onChange={v => saveSettings({ notifications: v })}
         />
+      </div>
+
+      {/* Coach personalization */}
+      <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 space-y-3">
+        <p className="text-sm font-semibold text-white">Personalización del Coach</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white">Modo del Coach</p>
+            <p className="text-xs text-slate-500">Entrenador, nutrición, salud o mixto</p>
+          </div>
+          <select
+            value={userSettings?.coach_mode || 'mixto'}
+            onChange={e => saveSettings({ coach_mode: e.target.value })}
+            className="bg-slate-700 text-white rounded-lg px-2 py-1 text-sm"
+          >
+            <option value="mixto">Mixto</option>
+            <option value="entrenador">Entrenador</option>
+            <option value="nutricion">Nutrición</option>
+            <option value="salud">Salud</option>
+          </select>
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white">Estilo</p>
+            <p className="text-xs text-slate-500">Directo, motivador o técnico</p>
+          </div>
+          <select
+            value={userSettings?.coach_style || 'motivador'}
+            onChange={e => saveSettings({ coach_style: e.target.value })}
+            className="bg-slate-700 text-white rounded-lg px-2 py-1 text-sm"
+          >
+            <option value="directo">Directo</option>
+            <option value="motivador">Motivador</option>
+            <option value="tecnico">Técnico</option>
+          </select>
+        </div>
       </div>
 
       {/* Sign out */}

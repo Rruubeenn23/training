@@ -8,7 +8,7 @@ import { onboardingDataToMemory } from '../utils/aiMemory';
 const PLAN_TEMPLATES = [
   {
     id: 'fullbody_3x',
-    name: 'Fullbody 3x',
+    name: 'Cuerpo completo 3x',
     emoji: '🔄',
     description: 'Cuerpo completo 3 días por semana. Ideal para principiantes o quien quiere eficiencia máxima.',
     days: '3 días/semana',
@@ -54,9 +54,9 @@ const PLAN_TEMPLATES = [
   },
   {
     id: 'upper_lower_4x',
-    name: 'Upper / Lower 4x',
+    name: 'Superior / Inferior 4x',
     emoji: '⚡',
-    description: 'Divide el cuerpo en tren superior e inferior. Frecuencia 2 para cada músculo.',
+    description: 'Divide el cuerpo en tren superior e inferior. Frecuencia 2 por músculo.',
     days: '4 días/semana',
     level: 'Intermedio',
     plan: {
@@ -110,9 +110,9 @@ const PLAN_TEMPLATES = [
   },
   {
     id: 'ppl_6x',
-    name: 'Push / Pull / Legs',
+    name: 'Empuje / Tracción / Pierna',
     emoji: '🔥',
-    description: 'El split más popular para volumen máximo. 6 días, alta frecuencia por músculo.',
+    description: 'El split más popular para volumen máximo. 6 días con alta frecuencia.',
     days: '6 días/semana',
     level: 'Intermedio / Avanzado',
     plan: {
@@ -480,15 +480,15 @@ export default function OnboardingPage() {
 
   const generateAIPlan = async (data, apiKey) => {
     const goals = Array.isArray(data.goals) ? data.goals.join(', ') : (data.goals || 'general fitness');
-    const prompt = `Create a weekly training plan in JSON for this user:
-- Goals: ${goals}
-- Level: ${data.experience}, Days/week: ${data.daysPerWeek}
-- Equipment: ${(data.equipment || []).join(', ')}
-- Injuries: ${(data.injuries || ['none']).join(', ')}
-- Notes: ${data.medicationNotes || 'none'}
+    const prompt = `Crea un plan semanal de entrenamiento en JSON para este usuario:
+- Objetivos: ${goals}
+- Nivel: ${data.experience}, Días/semana: ${data.daysPerWeek}
+- Equipamiento: ${(data.equipment || []).join(', ')}
+- Lesiones: ${(data.injuries || ['ninguna']).join(', ')}
+- Notas: ${data.medicationNotes || 'ninguna'}
 
-Respond ONLY with JSON: { "name": "Plan name", "lunes": { "name": "...", "focus": "...", "exercises": [{ "name": "...", "sets": 3, "reps": "8-12", "rest_seconds": 90 }] }, ... }
-Only include training days, skip rest days.`;
+Responde SOLO con JSON: { "name": "Nombre del plan", "lunes": { "name": "...", "focus": "...", "exercises": [{ "name": "...", "sets": 3, "reps": "8-12", "rest_seconds": 90 }] }, ... }
+Todo en español. Incluye solo días de entrenamiento, omite descansos.`;
 
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
