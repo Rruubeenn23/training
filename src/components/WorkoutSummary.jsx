@@ -9,6 +9,16 @@ export default function WorkoutSummary({ workoutData, metadata, newPRs, onClose,
   const duration = metadata?.duration || calculateWorkoutDuration(workoutData || {}) || '—';
 
   const prList = Object.entries(newPRs || {});
+  const buildCoachPrefill = () => {
+    const title = metadata?.title || 'Entrenamiento';
+    const prText = prList.length
+      ? `PRs: ${prList.map(([ex, pr]) => `${ex} ${pr.newRecord.weight}kg×${pr.newRecord.reps}`).join(', ')}`
+      : 'PRs: ninguno';
+    const exTop = exercises.slice(0, 4).join(', ') || 'sin ejercicios';
+    return `Analiza mi entrenamiento de hoy (${title}). Ejercicios: ${exTop}. ` +
+      `Total series: ${totalSets}. Volumen: ${volume} kg. Duración: ${duration}. ${prText}. ` +
+      `Dame 3 insights y 1 ajuste concreto para la próxima sesión.`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -117,7 +127,7 @@ export default function WorkoutSummary({ workoutData, metadata, newPRs, onClose,
         {/* Analyze with AI */}
         {onAnalyzeWithAI && (
           <button
-            onClick={onAnalyzeWithAI}
+            onClick={() => onAnalyzeWithAI(buildCoachPrefill())}
             className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg"
           >
             <Brain className="w-5 h-5" />

@@ -5,11 +5,19 @@ import TrainingTab from '../components/training/TrainingTab';
 import AICoach from '../components/AICoach';
 import ProgressCharts from '../components/ProgressCharts';
 import ProfilePage from './ProfilePage';
+import FeelingsLog from '../components/FeelingsLog';
+import NutritionLog from '../components/NutritionLog';
 import { useAppData } from '../contexts/AppDataContext';
 
 export default function MainApp() {
   const [tab, setTab] = useState('home');
+  const [coachPrefill, setCoachPrefill] = useState('');
   const { workoutLog, personalRecords, bodyMetrics, progressionTargets } = useAppData();
+
+  const goToCoach = (prefill) => {
+    setCoachPrefill(prefill || '');
+    setTab('coach');
+  };
 
   const renderTab = () => {
     switch (tab) {
@@ -17,10 +25,10 @@ export default function MainApp() {
         return <Dashboard onNavigate={setTab} />;
 
       case 'training':
-        return <TrainingTab onNavigateToCoach={() => setTab('coach')} />;
+        return <TrainingTab onNavigateToCoach={goToCoach} />;
 
       case 'coach':
-        return <AICoach />;
+        return <AICoach preloadedMessage={coachPrefill} />;
 
       case 'progress':
         return (
@@ -33,6 +41,12 @@ export default function MainApp() {
             />
           </div>
         );
+
+      case 'feelings':
+        return <FeelingsLog onClose={() => setTab('home')} />;
+
+      case 'nutrition':
+        return <NutritionLog onClose={() => setTab('home')} />;
 
       case 'profile':
         return <ProfilePage />;

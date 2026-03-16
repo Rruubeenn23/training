@@ -123,7 +123,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
         metadata={summaryData.metadata}
         newPRs={summaryData.newPRs}
         onClose={() => setShowSummary(false)}
-        onAnalyzeWithAI={() => { setShowSummary(false); onNavigateToCoach?.(); }}
+        onAnalyzeWithAI={(prefill) => { setShowSummary(false); onNavigateToCoach?.(prefill); }}
       />
     );
   }
