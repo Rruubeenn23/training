@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Dumbbell, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome } from 'lucide-react';
+import { Dumbbell, Mail, Lock, Eye, EyeOff, ArrowRight, Chrome, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { isSupabaseAvailable } from '../lib/supabase';
 
 export default function AuthPage() {
   const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
@@ -59,9 +60,21 @@ export default function AuthPage() {
     }
   };
 
+  const supabaseReady = isSupabaseAvailable();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
+        {/* Supabase not configured warning */}
+        {!supabaseReady && (
+          <div className="bg-red-500/15 border border-red-500/40 rounded-2xl p-4 mb-4 flex gap-3">
+            <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="text-red-300 font-semibold mb-1">Supabase no está configurado</p>
+              <p className="text-red-400/80">Asegúrate de que <code className="bg-red-500/20 px-1 rounded">.env</code> tiene <code className="bg-red-500/20 px-1 rounded">VITE_SUPABASE_URL</code> y <code className="bg-red-500/20 px-1 rounded">VITE_SUPABASE_ANON_KEY</code>, luego <strong>reinicia el servidor</strong> (<code className="bg-red-500/20 px-1 rounded">npm run dev</code>).</p>
+            </div>
+          </div>
+        )}
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 mb-4">

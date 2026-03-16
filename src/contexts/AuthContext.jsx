@@ -51,19 +51,28 @@ export function AuthProvider({ children }) {
     setLoading(false);
   };
 
+  const requireSupabase = () => {
+    if (!isSupabaseAvailable()) {
+      throw new Error('Supabase no está configurado. Comprueba las variables VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en tu archivo .env y reinicia el servidor de desarrollo.');
+    }
+  };
+
   const signUp = async (email, password) => {
+    requireSupabase();
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
     return data;
   };
 
   const signIn = async (email, password) => {
+    requireSupabase();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
   };
 
   const signInWithGoogle = async () => {
+    requireSupabase();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin }
@@ -73,11 +82,13 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    if (!isSupabaseAvailable()) return;
     await supabase.auth.signOut();
     setProfile(null);
   };
 
   const resetPassword = async (email) => {
+    requireSupabase();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}#reset-password`
     });
