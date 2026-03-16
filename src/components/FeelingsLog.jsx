@@ -48,6 +48,20 @@ export default function FeelingsLog({ onClose }) {
       .sort(([a], [b]) => new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00'))
       .slice(0, 7);
   }, [feelings]);
+  const averages = useMemo(() => {
+    if (recent.length === 0) return null;
+    const sums = recent.reduce((acc, [, f]) => {
+      acc.energy += f.energy || 0;
+      acc.sleep += f.sleep || 0;
+      acc.motivation += f.motivation || 0;
+      return acc;
+    }, { energy: 0, sleep: 0, motivation: 0 });
+    return {
+      energy: (sums.energy / recent.length).toFixed(1),
+      sleep: (sums.sleep / recent.length).toFixed(1),
+      motivation: (sums.motivation / recent.length).toFixed(1),
+    };
+  }, [recent]);
 
   const handleSave = async () => {
     await saveFeeling(today, { energy, sleep, motivation, notes: notes.trim() });
@@ -91,6 +105,17 @@ export default function FeelingsLog({ onClose }) {
             colorClass="text-amber-400"
           />
         </div>
+
+        {averages && (
+          <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 mt-4">
+            <p className="text-xs text-slate-400 mb-2">Media últimos 7 días</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-700/40 rounded-xl py-2 text-sm">E {averages.energy}</div>
+              <div className="bg-slate-700/40 rounded-xl py-2 text-sm">S {averages.sleep}</div>
+              <div className="bg-slate-700/40 rounded-xl py-2 text-sm">M {averages.motivation}</div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 mt-4">
           <label className="block text-xs text-slate-400 mb-2">Notas (opcional)</label>

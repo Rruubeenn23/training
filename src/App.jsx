@@ -15,6 +15,7 @@ import FeelingsPage from './pages/FeelingsPage';
 import NutritionPage from './pages/NutritionPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import LogoutPage from './pages/LogoutPage';
+import ConfirmPage from './pages/ConfirmPage';
 
 function AppLoading() {
   return (
@@ -41,7 +42,11 @@ function RequireAuth({ children }) {
   const isLoading = !timedOut && (loading || (user && dataLoading));
 
   if (isLoading) return <AppLoading />;
-  if (!user) return <Navigate to="/auth" replace state={{ from: location }} />;
+  if (!user) {
+    const target = location.pathname + location.search + location.hash;
+    localStorage.setItem('post_auth_redirect', target);
+    return <Navigate to="/auth" replace state={{ from: location }} />;
+  }
   if (!isOnboardingComplete) return <Navigate to="/onboarding" replace />;
   return children;
 }
@@ -57,7 +62,14 @@ function AuthGate({ children }) {
 
   const isLoading = !timedOut && (loading || (user && dataLoading));
   if (isLoading) return <AppLoading />;
-  if (user && isOnboardingComplete) return <Navigate to="/home" replace />;
+  if (user && isOnboardingComplete) {
+    const target = localStorage.getItem('post_auth_redirect');
+    if (target && !['/auth', '/onboarding', '/'].includes(target)) {
+      localStorage.removeItem('post_auth_redirect');
+      return <Navigate to={target} replace />;
+    }
+    return <Navigate to="/home" replace />;
+  }
   if (user && !isOnboardingComplete) return <Navigate to="/onboarding" replace />;
   return children;
 }
@@ -81,6 +93,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/confirm" element={<ConfirmPage />} />
       <Route
         path="/auth"
         element={

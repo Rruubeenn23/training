@@ -19,6 +19,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
   const {
     workoutLog, trainingPlan, progressionTargets,
     personalRecords, handleSetSaved, saveFeeling,
+    saveWorkout, userSettings,
   } = useAppData();
 
   const today = getTodayDateKey();
@@ -36,6 +37,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
   const [prToast, setPrToast] = useState(null);
   const [addingExercise, setAddingExercise] = useState(false);
   const [newExName, setNewExName] = useState('');
+  const [sessionNotes, setSessionNotes] = useState('');
   const prToastTimeout = useRef(null);
 
   const showPrToast = (name, weight, reps) => {
@@ -70,7 +72,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
       },
     };
     setActiveWorkout(newLog);
-    setShowTimer(true);
+    if (userSettings?.auto_rest_timer !== false) setShowTimer(true);
 
     // PR check
     const result = await handleSetSaved(exName, parseFloat(weight) || 0, parseInt(reps) || 0, today, { [today]: newLog });
@@ -92,11 +94,15 @@ export default function TrainingTab({ onNavigateToCoach }) {
 
   const finishWorkout = () => {
     const volume = calculateWorkoutVolume(activeWorkout);
+    const duration = calculateWorkoutDuration(activeWorkout);
     const metadata = {
       title: todayPlan?.name || todayPlan?.focus || 'Entrenamiento libre',
       volume: `${volume} kg`,
+      duration: duration || null,
+      notes: sessionNotes.trim() || null,
       date: new Date().toISOString(),
     };
+    saveWorkout(today, activeWorkout, metadata);
     setSummaryData({ workoutData: activeWorkout, newPRs: sessionPRs, metadata });
     setShowSummary(true);
   };
@@ -182,6 +188,18 @@ export default function TrainingTab({ onNavigateToCoach }) {
 
       {/* Exercises */}
       <div className="px-4 space-y-3">
+        {/* Session notes */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4">
+          <p className="text-xs text-slate-400 mb-2">Notas de la sesión (opcional)</p>
+          <input
+            type="text"
+            value={sessionNotes}
+            onChange={e => setSessionNotes(e.target.value)}
+            placeholder="Ej: buena energía, hombro sensible..."
+            className="w-full bg-slate-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
         {allExercises.map(exName => (
           <ExerciseCard
             key={exName}
@@ -233,7 +251,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
       {/* Rest Timer */}
       <RestTimer
         isVisible={showTimer}
-        defaultDuration={60}
+        defaultDuration={userSettings?.rest_timer_duration || 90}
         onDismiss={() => setShowTimer(false)}
       />
     </div>

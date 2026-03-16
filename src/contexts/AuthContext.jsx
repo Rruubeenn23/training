@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [localOnboardingComplete, setLocalOnboardingComplete] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseAvailable()) {
@@ -39,6 +40,24 @@ export function AuthProvider({ children }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user?.id) {
+      const key = `onboarding_complete_${user.id}`;
+      const flag = localStorage.getItem(key) === 'true';
+      setLocalOnboardingComplete(flag);
+    } else {
+      setLocalOnboardingComplete(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id && profile?.onboarding_complete) {
+      const key = `onboarding_complete_${user.id}`;
+      localStorage.setItem(key, 'true');
+      setLocalOnboardingComplete(true);
+    }
+  }, [user?.id, profile?.onboarding_complete]);
 
   const loadProfile = async (userId) => {
     try {
@@ -87,6 +106,9 @@ export function AuthProvider({ children }) {
     if (!isSupabaseAvailable()) return;
     await supabase.auth.signOut();
     setProfile(null);
+    if (user?.id) {
+      localStorage.removeItem(`onboarding_complete_${user.id}`);
+    }
   };
 
   const resetPassword = async (email) => {
@@ -99,6 +121,9 @@ export function AuthProvider({ children }) {
 
   const markOnboardingComplete = async () => {
     if (!user) return;
+    const key = `onboarding_complete_${user.id}`;
+    localStorage.setItem(key, 'true');
+    setLocalOnboardingComplete(true);
     const { data } = await supabase
       .from('profiles')
       .update({ onboarding_complete: true, updated_at: new Date().toISOString() })
@@ -117,7 +142,7 @@ export function AuthProvider({ children }) {
     session,
     profile,
     loading,
-    isOnboardingComplete: profile?.onboarding_complete ?? false,
+    isOnboardingComplete: profile?.onboarding_complete ?? localOnboardingComplete ?? false,
     displayName: profile?.display_name || user?.email?.split('@')[0] || 'Usuario',
     signUp,
     signIn,

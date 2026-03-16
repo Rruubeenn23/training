@@ -20,6 +20,12 @@ export default function NutritionLog({ onClose }) {
       .sort(([a], [b]) => new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00'))
       .slice(0, 7);
   }, [nutrition]);
+  const calories = useMemo(() => {
+    const p = parseFloat(protein || 0);
+    const c = parseFloat(carbs || 0);
+    const f = parseFloat(fats || 0);
+    return Math.round(p * 4 + c * 4 + f * 9);
+  }, [protein, carbs, fats]);
 
   const handleSave = async () => {
     await saveNutrition(today, {
@@ -63,6 +69,10 @@ export default function NutritionLog({ onClose }) {
             <p className="text-sm text-slate-300 font-medium">Hidratación</p>
           </div>
           <InputField label="Vasos de agua" value={water} onChange={setWater} />
+
+          <div className="bg-slate-700/40 rounded-xl px-3 py-2 text-sm text-slate-200">
+            Calorías estimadas: <span className="font-semibold">{calories}</span>
+          </div>
 
           <div>
             <label className="block text-xs text-slate-400 mb-2">Notas (opcional)</label>

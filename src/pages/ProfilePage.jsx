@@ -156,6 +156,20 @@ export default function ProfilePage() {
           value={userSettings?.auto_rest_timer !== false}
           onChange={v => saveSettings({ auto_rest_timer: v })}
         />
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white">Duración de descanso</p>
+            <p className="text-xs text-slate-500">En segundos (ej: 90)</p>
+          </div>
+          <input
+            type="number"
+            min="30"
+            max="300"
+            value={userSettings?.rest_timer_duration ?? 90}
+            onChange={e => saveSettings({ rest_timer_duration: parseInt(e.target.value || '90') })}
+            className="w-20 bg-slate-700 text-white rounded-lg px-2 py-1 text-sm text-center"
+          />
+        </div>
         <ToggleSetting
           label="Notificaciones"
           sub="Recordatorios de entrenamiento"

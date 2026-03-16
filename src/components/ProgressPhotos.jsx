@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Image as ImageIcon, Trash2, ArrowLeftRight } from 'lucide-react';
-import { getProgressPhotos, saveProgressPhoto } from '../utils/storageHelper';
+import { getProgressPhotos, saveProgressPhoto, deleteProgressPhoto } from '../utils/storageHelper';
 
 export default function ProgressPhotos({ onClose }) {
   const [photos, setPhotos] = useState([]);
@@ -60,16 +60,8 @@ export default function ProgressPhotos({ onClose }) {
 
   const deletePhoto = async (photoId) => {
     if (!confirm('¿Seguro que quieres eliminar esta foto?')) return;
-
-    const updatedPhotos = photos.filter(p => p.id !== photoId);
-    
-    // Save all photos except the deleted one
-    // Note: This requires a deletePhoto function in storageHelper
-    // For now, we'll just update the local state
-    setPhotos(updatedPhotos);
-    
-    // Would need to implement in storageHelper:
-    // await deleteProgressPhoto(photoId);
+    await deleteProgressPhoto(photoId);
+    await loadPhotos();
   };
 
   const togglePhotoSelection = (photo, index) => {
