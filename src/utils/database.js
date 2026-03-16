@@ -139,11 +139,25 @@ export async function getTrainingCycles(userId) {
 }
 
 export async function insertTrainingCycle(userId, cycle) {
-  const { data, error } = await supabase
+  const insertPromise = supabase
     .from('training_cycles')
-    .insert({ user_id: userId, ...cycle })
+    .insert({
+      user_id: userId,
+      name: cycle.name,
+      start_date: cycle.startDate || cycle.start_date || new Date().toISOString().split('T')[0],
+      total_weeks: cycle.totalWeeks ?? cycle.total_weeks ?? 4,
+      phases: cycle.phases || [],
+      is_active: cycle.is_active ?? true,
+      reason: cycle.reason || null,
+    })
     .select()
     .single();
+
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('insertTrainingCycle timeout')), 8000)
+  );
+
+  const { data, error } = await Promise.race([insertPromise, timeout]);
   if (error) throw error;
   return data;
 }

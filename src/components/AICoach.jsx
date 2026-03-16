@@ -86,13 +86,14 @@ export default function AICoach({ preloadedMessage, onClose }) {
   const insightsFetched = useRef(false);
 
   useEffect(() => {
-    // Priority: localStorage override → env key (shared for all users)
+    // Priority: localStorage override → DB user settings → env key (shared for all users)
     const savedKey = localStorage.getItem('groq_api_key')
+      || userSettings?.groq_api_key
       || import.meta.env.VITE_GROQ_API_KEY
       || '';
     if (savedKey) { setApiKey(savedKey); setHasApiKey(true); }
     addWelcomeMessage();
-  }, []);
+  }, [userSettings?.groq_api_key]);
 
   useEffect(() => {
     if (preloadedMessage && hasApiKey) setInputMessage(preloadedMessage);
@@ -269,11 +270,22 @@ Total entrenamientos: ${Object.keys(workoutLog).filter(d => Object.keys(workoutL
 Ejercicios únicos: ${exercises.length}
 
 === HERRAMIENTAS DISPONIBLES ===
-Puedes usar: replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets, read_current_plan.
+Puedes usar: replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets.
 Úsalas cuando el usuario pida cambios. Explica siempre qué hiciste y por qué.`;
   };
 
   // ─── Groq API Call ──────────────────────────────────────────────────────────
+  const groqFetch = (body) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    return fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+  };
+
   const callGroq = async (context, history, newMessage) => {
     const apiMessages = [
       {
@@ -291,34 +303,30 @@ ${context}`,
       { role: 'user', content: newMessage },
     ];
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: apiMessages,
-        tools: AI_TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
+    console.log('[AI] 1. Sending first Groq request, messages:', apiMessages.length, 'system chars:', apiMessages[0].content.length);
+
+    const res = await groqFetch({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      messages: apiMessages,
+      tools: AI_TOOLS,
+      tool_choice: 'auto',
+      temperature: 0.7,
+      max_tokens: 2000,
     });
+
+    console.log('[AI] 2. First response received, status:', res.status);
 
     if (!res.ok) {
       const err = await res.json();
       const msg = err.error?.message || `Error ${res.status}`;
-      // Groq failed_generation: model tried to call a tool but produced invalid JSON.
-      // Retry without tools so the user still gets a text answer.
+      console.error('[AI] First call error:', msg);
       if (msg.toLowerCase().includes('failed_generation') || msg.toLowerCase().includes('failed to call')) {
-        const fallback = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            messages: apiMessages,
-            temperature: 0.7,
-            max_tokens: 2000,
-          }),
+        console.log('[AI] Retrying without tools (failed_generation)');
+        const fallback = await groqFetch({
+          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+          messages: apiMessages,
+          temperature: 0.7,
+          max_tokens: 2000,
         });
         if (!fallback.ok) throw new Error(`Error ${fallback.status}`);
         const fd = await fallback.json();
@@ -329,26 +337,29 @@ ${context}`,
 
     const data = await res.json();
     const choice = data.choices[0];
+    console.log('[AI] 3. finish_reason:', choice.finish_reason, '| tool_calls:', choice.message.tool_calls?.length ?? 0);
 
     if (choice.finish_reason !== 'tool_calls' || !choice.message.tool_calls) {
+      console.log('[AI] No tool calls, returning text response');
       return { text: choice.message.content || '', toolResults: [] };
     }
 
     // Execute tools — wrap AppDataContext methods to match executeTool's expected API
     const appState = { trainingPlan, trainingCycles };
     const appSetters = {
-      // executeTool passes full plan object: { plan, name, version, ... }
-      setTrainingPlan: async (fullPlan) => {
+      // Fire-and-forget: local state updates immediately, DB save in background
+      setTrainingPlan: (fullPlan) => {
         const planData = fullPlan.plan || fullPlan;
         const name = fullPlan.name || trainingPlan?.name || 'Mi Plan';
-        await savePlan(planData, name);
+        console.log('[AI] setTrainingPlan called, days:', Object.keys(planData).length);
+        savePlan(planData, name).catch(err => console.error('[AI] plan save failed:', err));
       },
-      // executeTool passes { cycles: [...], activeCycleId }
-      setTrainingCycles: async (updated) => {
+      setTrainingCycles: (updated) => {
         const existingIds = (trainingCycles || []).map(c => c.id);
         const newCycles = (updated.cycles || []).filter(c => !existingIds.includes(c.id));
+        console.log('[AI] setTrainingCycles called, new cycles:', newCycles.length);
         for (const cycle of newCycles) {
-          await saveTrainingCycle(cycle);
+          saveTrainingCycle(cycle).catch(err => console.error('[AI] cycle save failed:', err));
         }
       },
     };
@@ -357,36 +368,39 @@ ${context}`,
     for (const tc of choice.message.tool_calls) {
       let args = {};
       try { args = JSON.parse(tc.function.arguments); } catch {}
+      console.log('[AI] 4. Executing tool:', tc.function.name, 'args keys:', Object.keys(args));
       const result = await executeTool(tc.function.name, args, appState, appSetters);
+      console.log('[AI] 5. Tool result:', result.success, result.summary?.slice(0, 80));
       toolResults.push({ toolCallId: tc.id, toolName: tc.function.name, result });
     }
 
-    // Second call with tool results
-    const res2 = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          ...apiMessages,
-          choice.message,
-          ...toolResults.map(tr => ({
-            role: 'tool',
-            tool_call_id: tr.toolCallId,
-            content: tr.result.readResult || (tr.result.success ? `OK: ${tr.result.summary}` : `Error: ${tr.result.summary}`),
-          })),
-        ],
-        temperature: 0.7,
-        max_tokens: 1500,
-      }),
+    console.log('[AI] 6. Sending second Groq request with', toolResults.length, 'tool results');
+
+    const res2 = await groqFetch({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      messages: [
+        ...apiMessages,
+        choice.message,
+        ...toolResults.map(tr => ({
+          role: 'tool',
+          tool_call_id: tr.toolCallId,
+          content: tr.result.readResult || (tr.result.success ? `OK: ${tr.result.summary}` : `Error: ${tr.result.summary}`),
+        })),
+      ],
+      temperature: 0.7,
+      max_tokens: 1500,
     });
+
+    console.log('[AI] 7. Second response received, status:', res2.status);
 
     if (!res2.ok) {
       const err = await res2.json();
+      console.error('[AI] Second call error:', err);
       throw new Error(err.error?.message || `Error ${res2.status}`);
     }
 
     const data2 = await res2.json();
+    console.log('[AI] 8. Done. Response length:', data2.choices[0].message.content?.length);
     return { text: data2.choices[0].message.content || '', toolResults };
   };
 
@@ -400,18 +414,14 @@ ${context}`,
     setInsightsLoading(true);
     try {
       const context = buildContext();
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: `Eres el coach de ${displayName}. ${context}` },
-            { role: 'user', content: 'Genera exactamente 3 insights concretos y accionables. Responde SOLO con JSON array de strings: ["Insight 1", "Insight 2", "Insight 3"]' },
-          ],
-          temperature: 0.6,
-          max_tokens: 400,
-        }),
+      const res = await groqFetch({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: [
+          { role: 'system', content: `Eres el coach de ${displayName}. ${context}` },
+          { role: 'user', content: 'Genera exactamente 3 insights concretos y accionables. Responde SOLO con JSON array de strings: ["Insight 1", "Insight 2", "Insight 3"]' },
+        ],
+        temperature: 0.6,
+        max_tokens: 400,
       });
       if (!res.ok) return;
       const data = await res.json();

@@ -178,7 +178,7 @@ export default function TrainingTab({ onNavigateToCoach }) {
           <p className="text-white font-semibold mb-1">Sin plan para hoy</p>
           <p className="text-slate-400 text-sm mb-4">Pide al Coach IA que cree tu rutina o añade ejercicios manualmente</p>
           <button
-            onClick={onNavigateToCoach}
+            onClick={() => onNavigateToCoach?.()}
             className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium px-4 py-2 rounded-xl"
           >
             Abrir Coach IA

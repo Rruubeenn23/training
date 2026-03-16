@@ -494,7 +494,7 @@ Todo en español. Incluye solo días de entrenamiento, omite descansos.`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 2500,

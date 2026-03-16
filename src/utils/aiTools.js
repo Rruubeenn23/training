@@ -188,17 +188,14 @@ export async function executeTool(toolName, args, appState, appSetters) {
       }
 
       case 'create_training_cycle': {
-        const id = `cycle-${Date.now()}`;
         const newCycle = {
-          id,
           name: args.name,
-          createdAt: new Date().toISOString(),
           startDate: new Date().toISOString().split('T')[0],
           totalWeeks: args.totalWeeks,
           phases: args.phases || [],
           reason: args.reason,
         };
-        await setTrainingCycles({ cycles: newCycle });
+        await setTrainingCycles({ cycles: [newCycle] });
         const phaseNames = (args.phases || []).map(p => p.name).join(' → ');
         return {
           success: true,
