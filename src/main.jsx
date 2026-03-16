@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './index.css'
 import { AuthProvider } from './contexts/AuthContext'
 import { AppDataProvider } from './contexts/AppDataContext'
+import { BrowserRouter } from 'react-router-dom'
 
 // Minimal localStorage-backed polyfill for environments without window.storage
 if (typeof window !== 'undefined' && !window.storage) {
@@ -25,10 +26,12 @@ if (typeof window !== 'undefined' && !window.storage) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>
-      <AppDataProvider>
-        <App />
-      </AppDataProvider>
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppDataProvider>
+          <App />
+        </AppDataProvider>
+      </AuthProvider>
+    </BrowserRouter>
   </React.StrictMode>,
 )
