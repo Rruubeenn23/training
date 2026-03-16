@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home, Dumbbell, Apple, TrendingUp, Brain, Target,
   ChevronLeft, ChevronRight, Activity, Moon, Zap,
   Check, Plus, Minus, Upload, Camera, Download,
   Settings as SettingsIcon, History as HistoryIcon,
-  Calendar, Flame
+  Calendar, Flame, Scale, Trophy, Timer
 } from 'lucide-react';
 import { getCurrentDayKey, getTodayDateKey } from './utils/dateUtils';
 
@@ -16,84 +16,34 @@ import ExportData from './components/ExportData';
 import EnhancedCalendar from './components/EnhancedCalendar';
 import WorkoutHistory from './components/WorkoutHistory';
 import Settings from './components/Settings';
+import RestTimer from './components/RestTimer';
+import BodyMetrics from './components/BodyMetrics';
+import WorkoutSummary from './components/WorkoutSummary';
 
 import {
   getWorkoutLogs, saveWorkoutLogs,
   getDailyFeelings, saveDailyFeeling,
   getSettings, mergeSupabaseData,
-  getNutritionLogs, saveNutritionLog
+  getNutritionLogs, saveNutritionLog,
+  getTrainingPlan, saveTrainingPlan, getDefaultTrainingPlan,
+  getTrainingCycles, saveTrainingCycles,
+  getProgressionTargets, saveProgressionTargets,
+  getPersonalRecords, savePersonalRecords,
+  getBodyMetrics, saveBodyMetric,
+  getWorkoutStreak, saveWorkoutStreak,
 } from './utils/storageHelper';
-import { initSupabase, autoLoadFromSupabase } from './utils/database';
-
-// ─── Weekly Plan ────────────────────────────────────────────────────────────
-const WEEKLY_PLAN = {
-  lunes: {
-    name: 'Empuje Fuerte', emoji: '🔵',
-    muscle: 'Pecho + Hombro + Tríceps', intensity: 'Alta',
-    exercises: [
-      { name: 'Press banca',                weight: '55/60/65 kg',   reps: '8/6-8/5-6' },
-      { name: 'Press inclinado mancuernas', weight: '17.5 kg',       reps: '3×8-10' },
-      { name: 'Cruces polea',              weight: '10-12 kg',       reps: '2×12-15' },
-      { name: 'Press militar',             weight: '45 kg',          reps: '3×6-8' },
-      { name: 'Fondos',                    weight: 'PC + 2.5-5 kg',  reps: '3×6-10' },
-      { name: 'Extensión polea',           weight: '32-35 kg',       reps: '2×10-12' },
-      { name: 'Extensión overhead',        weight: '22-25 kg',       reps: '2×12-15' },
-    ],
-  },
-  martes: {
-    name: 'Tracción', emoji: '🟢',
-    muscle: 'Espalda + Bíceps', intensity: 'Medio-Alto',
-    exercises: [
-      { name: 'Jalón',                      weight: '75/80/80 kg', reps: '10/8-10/6-8' },
-      { name: 'Remo multipower',            weight: '50 kg',       reps: '3×8-10' },
-      { name: 'Remo polea',                 weight: '60 kg',       reps: '2×10-12' },
-      { name: 'Remo unilateral polea',      weight: 'Medio-alto',  reps: '2×10-12' },
-      { name: 'Pull-over',                  weight: '35 kg',       reps: '2×12-15' },
-      { name: 'Curl EZ',                    weight: '30 kg',       reps: '3×8-8-6' },
-      { name: 'Curl polea/martillo',        weight: 'Medio',       reps: '2×10-12' },
-      { name: 'Curl polea baja',            weight: '25 kg',       reps: '2×12-15' },
-    ],
-  },
-  miercoles: {
-    name: 'Pierna Completa', emoji: '🟡',
-    muscle: 'Cuádriceps + Femoral + Gemelos', intensity: 'Media',
-    exercises: [
-      { name: 'Sentadilla',                   weight: '70/80/82.5 kg', reps: '8/6-8/6' },
-      { name: 'Zancadas',                     weight: '17.5 kg',       reps: '2×10-12' },
-      { name: 'Sentadilla pies adelantados',  weight: 'Medio',         reps: '2×10-12' },
-      { name: 'Peso muerto rumano',           weight: '60-70 kg',      reps: '3×8-10' },
-      { name: 'Curl femoral',                 weight: 'Medio',         reps: '2×12-15' },
-      { name: 'Gemelos',                      weight: 'Medio-alto',    reps: '3×15-20' },
-    ],
-  },
-  jueves: {
-    name: 'Bomba / Recuperación', emoji: '🟣',
-    muscle: 'Volumen ligero', intensity: 'Media-Baja',
-    exercises: [
-      { name: 'Elevaciones laterales',      reps: '3×12-15' },
-      { name: 'Pájaros',                    reps: '3×12-15' },
-      { name: 'Press militar ligero',       reps: '2×8-10' },
-      { name: 'Press inclinado multipower', reps: '2×8-10' },
-      { name: 'Aperturas inclinadas',       reps: '2×12-15' },
-      { name: 'Curl polea',                 reps: '2×12-15' },
-      { name: 'Extensión polea',            reps: '2×12-15' },
-      { name: 'Fondos banco',               reps: '2×12-15' },
-    ],
-  },
-  viernes:  { name: 'Fútbol',          emoji: '🔴', muscle: 'HIIT Natural',           intensity: 'Alta',      exercises: [] },
-  sabado:   { name: 'Descanso',         emoji: '🟤', muscle: 'Recuperación activa',    intensity: 'Baja',      exercises: [] },
-  domingo:  { name: 'Pádel (Opcional)', emoji: '⚪', muscle: 'Aeróbico intermitente',  intensity: 'Media',     exercises: [] },
-};
+import { initSupabase, autoLoadFromSupabase, processOfflineSyncQueue } from './utils/database';
+import {
+  checkForPR, updatePersonalRecords,
+  calculateStreak, calculateProgressionTargets,
+  calculateWorkoutVolume, calculateWorkoutDuration
+} from './utils/progressionEngine';
 
 const DAYS_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const DAYS_NAMES = {
   lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles',
   jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo',
 };
-
-function getTodayWorkoutData() {
-  return WEEKLY_PLAN[getCurrentDayKey()];
-}
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -105,7 +55,32 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [supabaseInitialized, setSupabaseInitialized] = useState(false);
 
+  // New state
+  const [trainingPlan, setTrainingPlan] = useState(null);
+  const [trainingCycles, setTrainingCycles] = useState({ cycles: [], activeCycleId: null });
+  const [progressionTargets, setProgressionTargets] = useState({});
+  const [personalRecords, setPersonalRecords] = useState({});
+  const [bodyMetrics, setBodyMetrics] = useState({ entries: [] });
+  const [workoutStreak, setWorkoutStreak] = useState({ currentStreak: 0, longestStreak: 0 });
+  const [toast, setToast] = useState(null); // { type, message, icon }
+  const [aiCoachMessage, setAiCoachMessage] = useState(null); // Pre-loaded message for AI
+  const [workoutSummaryData, setWorkoutSummaryData] = useState(null); // { workoutData, newPRs }
+  const toastTimeoutRef = useRef(null);
+
   useEffect(() => { initializeApp(); }, []);
+
+  // Online event → process offline queue
+  useEffect(() => {
+    const handler = () => processOfflineSyncQueue();
+    window.addEventListener('online', handler);
+    return () => window.removeEventListener('online', handler);
+  }, []);
+
+  const showToast = (type, message, icon = null) => {
+    clearTimeout(toastTimeoutRef.current);
+    setToast({ type, message, icon });
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 4000);
+  };
 
   const initializeApp = async () => {
     setIsLoading(true);
@@ -129,11 +104,43 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const logs = await getWorkoutLogs();
+      const [logs, feelings, plan, cycles, progression, records, metrics, streak] = await Promise.all([
+        getWorkoutLogs(),
+        getDailyFeelings(),
+        getTrainingPlan(),
+        getTrainingCycles(),
+        getProgressionTargets(),
+        getPersonalRecords(),
+        getBodyMetrics(),
+        getWorkoutStreak(),
+      ]);
+
       setWorkoutLog(logs);
-      const feelings = await getDailyFeelings();
       const today = getTodayDateKey();
       if (feelings[today]) setTodayFeeling(feelings[today]);
+
+      // Seed default plan if none exists
+      if (!plan) {
+        const defaultPlan = getDefaultTrainingPlan();
+        await saveTrainingPlan(defaultPlan);
+        setTrainingPlan(defaultPlan);
+      } else {
+        setTrainingPlan(plan);
+      }
+
+      setTrainingCycles(cycles);
+      setProgressionTargets(progression);
+      setPersonalRecords(records);
+      setBodyMetrics(metrics);
+
+      // Recalculate streak
+      const freshStreak = calculateStreak(logs);
+      if (freshStreak.currentStreak !== streak.currentStreak || freshStreak.lastTrainedDate !== streak.lastTrainedDate) {
+        await saveWorkoutStreak(freshStreak);
+        setWorkoutStreak(freshStreak);
+      } else {
+        setWorkoutStreak(freshStreak);
+      }
     } catch {
       console.log('Primera carga, sin datos previos');
     }
@@ -142,11 +149,90 @@ export default function App() {
   const saveWorkoutLogData = async (newLog) => {
     setWorkoutLog(newLog);
     await saveWorkoutLogs(newLog);
+
+    // Update streak
+    const streak = calculateStreak(newLog);
+    await saveWorkoutStreak(streak);
+    setWorkoutStreak(streak);
+
+    // Update progression targets (background)
+    const settings = await getSettings();
+    const sessions = settings.progressionSessions ?? 2;
+    const updatedTargets = calculateProgressionTargets(newLog, progressionTargets, sessions);
+    setProgressionTargets(updatedTargets);
+    saveProgressionTargets(updatedTargets);
+  };
+
+  const handleSetSaveWithPR = async (exName, weight, reps, newLog) => {
+    await saveWorkoutLogData(newLog);
+
+    // PR check
+    const prResult = checkForPR(exName, weight, reps, personalRecords);
+    if (prResult.isPR) {
+      const updatedRecords = updatePersonalRecords(exName, weight, reps, getTodayDateKey(), personalRecords);
+      setPersonalRecords(updatedRecords);
+      savePersonalRecords(updatedRecords);
+
+      const prType = prResult.type === 'weight' ? 'peso máximo' : prResult.type === '1rm' ? '1RM estimado' : 'primer registro';
+      showToast('pr', `¡PR en ${exName}! ${weight}kg × ${reps} reps (${prType})`, '🏆');
+
+      return { isPR: true, prResult, updatedRecords };
+    }
+    return { isPR: false };
+  };
+
+  const handleFinishWorkout = async (workoutData) => {
+    const today = getTodayDateKey();
+    const volume = calculateWorkoutVolume(workoutData);
+    const duration = calculateWorkoutDuration(workoutData);
+    const todayPlan = trainingPlan?.plan?.[getCurrentDayKey()];
+
+    const metadata = {
+      title: todayPlan?.name || 'Entrenamiento',
+      duration: duration || '—',
+      volume: `${volume} kg`,
+      date: new Date().toISOString(),
+    };
+
+    await saveWorkoutLogData({ ...workoutLog, [today]: workoutData });
+
+    // Collect PRs for this session
+    const sessionPRs = {};
+    Object.entries(workoutData).forEach(([exName, sets]) => {
+      Object.values(sets).forEach(set => {
+        const pr = checkForPR(exName, set.weight, set.reps, personalRecords);
+        if (pr.isPR) sessionPRs[exName] = pr;
+      });
+    });
+
+    // Update records for all PRs
+    let updatedRecs = { ...personalRecords };
+    Object.entries(sessionPRs).forEach(([exName, pr]) => {
+      updatedRecs = updatePersonalRecords(exName, pr.newRecord.weight, pr.newRecord.reps, today, updatedRecs);
+    });
+    if (Object.keys(sessionPRs).length > 0) {
+      setPersonalRecords(updatedRecs);
+      savePersonalRecords(updatedRecs);
+    }
+
+    setWorkoutSummaryData({ workoutData, newPRs: sessionPRs, metadata });
+    setScreen('workout-summary');
   };
 
   const saveTodayFeelingData = async (feeling) => {
     setTodayFeeling(feeling);
     await saveDailyFeeling(getTodayDateKey(), feeling);
+  };
+
+  const handleSaveBodyMetric = async (entry) => {
+    await saveBodyMetric(entry);
+    const updated = await getBodyMetrics();
+    setBodyMetrics(updated);
+  };
+
+  const handleOpenAICoach = (preloadedMessage = null) => {
+    setAiCoachMessage(preloadedMessage);
+    setTab('coach');
   };
 
   const goBack = () => setScreen(null);
@@ -177,38 +263,100 @@ export default function App() {
   if (screen === 'settings')  return <Settings onBack={goBack} onSupabaseConfigured={initializeApp} />;
   if (screen === 'feeling')   return <FeelingView onSave={saveTodayFeelingData} onBack={goBack} existing={todayFeeling} />;
   if (screen === 'charts')    return <ProgressCharts workoutLogs={workoutLog} onClose={goBack} />;
+  if (screen === 'body-metrics')
+    return <BodyMetrics bodyMetrics={bodyMetrics} onSave={handleSaveBodyMetric} onClose={goBack} />;
+  if (screen === 'workout-summary' && workoutSummaryData)
+    return (
+      <WorkoutSummary
+        workoutData={workoutSummaryData.workoutData}
+        metadata={workoutSummaryData.metadata}
+        newPRs={workoutSummaryData.newPRs}
+        onClose={goBack}
+        onAnalyzeWithAI={() => {
+          goBack();
+          const msg = `Acabo de terminar mi entrenamiento: ${Object.keys(workoutSummaryData.workoutData).join(', ')}. Volumen total: ${calculateWorkoutVolume(workoutSummaryData.workoutData)} kg. ¿Puedes analizar cómo fue la sesión?`;
+          handleOpenAICoach(msg);
+        }}
+      />
+    );
   if (screen === 'day-workout')
-    return <WorkoutDayView day={selectedDay} workoutLog={workoutLog} onSave={saveWorkoutLogData} onBack={goBack} />;
+    return (
+      <WorkoutDayView
+        day={selectedDay}
+        workoutLog={workoutLog}
+        trainingPlan={trainingPlan}
+        onSave={saveWorkoutLogData}
+        onBack={goBack}
+      />
+    );
 
-  // Coach tab is full-screen (no bottom nav) — AICoach handles its own layout
+  // Coach tab is full-screen (no bottom nav)
   if (tab === 'coach') {
-    return <AICoach workoutLogs={workoutLog} onClose={() => setTab('home')} />;
+    return (
+      <AICoach
+        workoutLogs={workoutLog}
+        trainingPlan={trainingPlan}
+        trainingCycles={trainingCycles}
+        progressionTargets={progressionTargets}
+        personalRecords={personalRecords}
+        bodyMetrics={bodyMetrics}
+        preloadedMessage={aiCoachMessage}
+        onPlanUpdate={(plan) => { setTrainingPlan(plan); }}
+        onCyclesUpdate={(cycles) => { setTrainingCycles(cycles); }}
+        onClose={() => { setAiCoachMessage(null); setTab('home'); }}
+      />
+    );
   }
 
   // Main layout with bottom nav
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 left-4 right-4 z-50 max-w-sm mx-auto rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-3 transition-all ${
+          toast.type === 'pr'
+            ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white'
+            : 'bg-slate-700 text-white'
+        }`}>
+          {toast.icon && <span className="text-xl">{toast.icon}</span>}
+          <p className="font-semibold text-sm flex-1">{toast.message}</p>
+        </div>
+      )}
+
       <div className="pb-20">
         {tab === 'home' && (
           <HomeView
             workoutLog={workoutLog}
             todayFeeling={todayFeeling}
+            trainingPlan={trainingPlan}
+            workoutStreak={workoutStreak}
             onNavigate={setScreen}
             onSelectDay={(day) => { setSelectedDay(day); setScreen('day-workout'); }}
             onTab={setTab}
+            onOpenAICoach={handleOpenAICoach}
             supabaseConnected={supabaseInitialized}
           />
         )}
         {tab === 'train' && (
           <TrainView
             workoutLog={workoutLog}
+            trainingPlan={trainingPlan}
+            progressionTargets={progressionTargets}
+            personalRecords={personalRecords}
             onSave={saveWorkoutLogData}
+            onSetSaveWithPR={handleSetSaveWithPR}
+            onFinishWorkout={handleFinishWorkout}
             onNavigate={setScreen}
           />
         )}
         {tab === 'nutrition' && <NutritionView />}
         {tab === 'progress' && (
-          <ProgressView workoutLog={workoutLog} onNavigate={setScreen} />
+          <ProgressView
+            workoutLog={workoutLog}
+            workoutStreak={workoutStreak}
+            trainingCycles={trainingCycles}
+            onNavigate={setScreen}
+          />
         )}
       </div>
       <BottomNav tab={tab} setTab={setTab} />
@@ -253,9 +401,10 @@ function BottomNav({ tab, setTab }) {
 }
 
 // ─── Home Tab ─────────────────────────────────────────────────────────────────
-function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay, onTab, supabaseConnected }) {
-  const todayWorkout = getTodayWorkoutData();
+function HomeView({ workoutLog, todayFeeling, trainingPlan, workoutStreak, onNavigate, onSelectDay, onTab, onOpenAICoach, supabaseConnected }) {
+  const plan = trainingPlan?.plan || {};
   const dayKey = getCurrentDayKey();
+  const todayWorkout = plan[dayKey] || { name: 'Sin plan', emoji: '📋', muscle: '—', intensity: '—', exercises: [] };
   const todayDateKey = getTodayDateKey();
   const todayLogs = workoutLog[todayDateKey] || {};
 
@@ -292,6 +441,17 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay, onTab, su
           </button>
         </div>
       </div>
+
+      {/* Streak badge */}
+      {workoutStreak.currentStreak >= 2 && (
+        <div className="flex items-center gap-2 mb-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl px-4 py-3">
+          <span className="text-xl">🔥</span>
+          <div>
+            <p className="font-bold text-orange-300 text-sm">{workoutStreak.currentStreak} días seguidos</p>
+            <p className="text-xs text-orange-400/70">Mejor racha: {workoutStreak.longestStreak} días</p>
+          </div>
+        </div>
+      )}
 
       {/* Today's workout hero */}
       <button
@@ -377,10 +537,19 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay, onTab, su
 
       {/* Weekly plan */}
       <div className="mb-5">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Plan Semanal</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Plan Semanal</p>
+          <button
+            onClick={() => onOpenAICoach('Quiero cambiar mi rutina. ¿Puedes proponerme un nuevo plan semanal adaptado a mi situación actual?')}
+            className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            Editar con IA
+          </button>
+        </div>
         <div className="grid grid-cols-7 gap-1.5">
           {DAYS_ORDER.map(day => {
-            const w = WEEKLY_PLAN[day];
+            const w = plan[day] || { emoji: '📋', name: day };
             const isToday = day === dayKey;
             return (
               <button
@@ -432,14 +601,23 @@ function HomeView({ workoutLog, todayFeeling, onNavigate, onSelectDay, onTab, su
   );
 }
 
-// ─── Train Tab (inline set logging) ──────────────────────────────────────────
-function TrainView({ workoutLog, onSave, onNavigate }) {
+// ─── Train Tab ────────────────────────────────────────────────────────────────
+function TrainView({ workoutLog, trainingPlan, progressionTargets, personalRecords, onSave, onSetSaveWithPR, onFinishWorkout, onNavigate }) {
   const dayKey = getCurrentDayKey();
-  const workout = WEEKLY_PLAN[dayKey];
+  const plan = trainingPlan?.plan || {};
+  const workout = plan[dayKey] || { name: 'Sin plan', emoji: '📋', muscle: '—', intensity: '—', exercises: [] };
   const todayDateKey = getTodayDateKey();
 
   const [localLog, setLocalLog] = useState({});
   const [setInputs, setSetInputs] = useState({});
+  const [restTimer, setRestTimer] = useState({ visible: false });
+  const [restDuration, setRestDuration] = useState(90);
+
+  useEffect(() => {
+    getSettings().then(s => {
+      if (s.restTimerDuration) setRestDuration(s.restTimerDuration);
+    });
+  }, []);
 
   useEffect(() => {
     const log = workoutLog[todayDateKey] || {};
@@ -472,7 +650,11 @@ function TrainView({ workoutLog, onSave, onNavigate }) {
       },
     };
     setLocalLog(newLog);
-    await onSave({ ...workoutLog, [todayDateKey]: newLog });
+    const fullLog = { ...workoutLog, [todayDateKey]: newLog };
+    await onSetSaveWithPR(exName, input.weight, input.reps, fullLog);
+
+    // Start rest timer
+    setRestTimer({ visible: true });
   };
 
   const totalLogged = Object.keys(localLog).length;
@@ -529,18 +711,38 @@ function TrainView({ workoutLog, onSave, onNavigate }) {
               exercise={exercise}
               localLog={localLog}
               setInputs={setInputs}
+              progressionTarget={progressionTargets[exercise.name]}
+              personalRecord={personalRecords[exercise.name]}
               onSetChange={handleSetChange}
               onSetSave={handleSetSave}
             />
           ))}
         </div>
       )}
+
+      {/* Finish workout button */}
+      {totalLogged > 0 && (
+        <button
+          onClick={() => onFinishWorkout(localLog)}
+          className="w-full mt-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg"
+        >
+          <Trophy className="w-5 h-5" />
+          Finalizar entrenamiento
+        </button>
+      )}
+
+      {/* Rest timer */}
+      <RestTimer
+        isVisible={restTimer.visible}
+        defaultDuration={restDuration}
+        onDismiss={() => setRestTimer({ visible: false })}
+      />
     </div>
   );
 }
 
-// ─── Exercise Card (inline set inputs) ───────────────────────────────────────
-function ExerciseCard({ exercise, localLog, setInputs, onSetChange, onSetSave }) {
+// ─── Exercise Card ────────────────────────────────────────────────────────────
+function ExerciseCard({ exercise, localLog, setInputs, progressionTarget, personalRecord, onSetChange, onSetSave }) {
   const exerciseLog = localLog[exercise.name] || {};
 
   const numSets = (() => {
@@ -555,6 +757,8 @@ function ExerciseCard({ exercise, localLog, setInputs, onSetChange, onSetSave })
   const loggedSets = Object.keys(exerciseLog).filter(k => exerciseLog[k]?.weight && exerciseLog[k]?.reps).length;
   const isComplete = loggedSets >= numSets;
 
+  const bestRecord = personalRecord?.bestWeight;
+
   return (
     <div className={`bg-slate-800 border rounded-2xl p-4 transition-all ${
       isComplete ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-slate-700/50'
@@ -562,13 +766,21 @@ function ExerciseCard({ exercise, localLog, setInputs, onSetChange, onSetSave })
       {/* Exercise header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-bold truncate">{exercise.name}</h3>
             {isComplete && <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />}
+            {progressionTarget?.readyToProgress && !isComplete && (
+              <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full flex-shrink-0">⬆️ Subir peso</span>
+            )}
           </div>
           {(exercise.weight || exercise.reps) && (
             <p className="text-xs text-slate-400 mt-0.5">
               {exercise.weight}{exercise.weight && exercise.reps ? ' · ' : ''}{exercise.reps}
+            </p>
+          )}
+          {bestRecord && (
+            <p className="text-xs text-amber-500/70 mt-0.5">
+              PR: {bestRecord.weight}kg × {bestRecord.reps} reps
             </p>
           )}
         </div>
@@ -636,8 +848,9 @@ function ExerciseCard({ exercise, localLog, setInputs, onSetChange, onSetSave })
 }
 
 // ─── Workout Day View (overlay for specific day) ──────────────────────────────
-function WorkoutDayView({ day, workoutLog, onSave, onBack }) {
-  const workout = WEEKLY_PLAN[day];
+function WorkoutDayView({ day, workoutLog, trainingPlan, onSave, onBack }) {
+  const plan = trainingPlan?.plan || {};
+  const workout = plan[day] || { name: DAYS_NAMES[day] || day, emoji: '📋', muscle: '—', intensity: '—', exercises: [] };
   const todayDateKey = getTodayDateKey();
 
   const [localLog, setLocalLog] = useState({});
@@ -676,8 +889,6 @@ function WorkoutDayView({ day, workoutLog, onSave, onBack }) {
     setLocalLog(newLog);
     await onSave({ ...workoutLog, [todayDateKey]: newLog });
   };
-
-  if (!workout) return null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -838,7 +1049,6 @@ function NutritionView() {
 
   return (
     <div className="p-5 pt-6">
-      {/* Header */}
       <h1 className="text-2xl font-bold mb-4">Nutrición</h1>
 
       {/* Date nav */}
@@ -939,7 +1149,7 @@ function NutritionView() {
 }
 
 // ─── Progress Tab ─────────────────────────────────────────────────────────────
-function ProgressView({ workoutLog, onNavigate }) {
+function ProgressView({ workoutLog, workoutStreak, trainingCycles, onNavigate }) {
   const totalWorkouts = Object.keys(workoutLog).filter(d => Object.keys(workoutLog[d]).length > 0).length;
   const now = new Date();
   const thisMonth = Object.keys(workoutLog).filter(date => {
@@ -949,12 +1159,15 @@ function ProgressView({ workoutLog, onNavigate }) {
   }).length;
   const totalExercises = Object.values(workoutLog).reduce((a, d) => a + Object.keys(d).length, 0);
 
+  const activeCycle = trainingCycles?.cycles?.find(c => c.id === trainingCycles.activeCycleId);
+
   const navCards = [
-    { label: 'Gráficas de progreso', sub: 'Peso, volumen y 1RM', icon: TrendingUp,    color: 'text-blue-400',   bg: 'bg-blue-500/15',   border: 'border-blue-500/30',   screen: 'charts'   },
-    { label: 'Historial',            sub: 'Todos tus entrenamientos', icon: HistoryIcon, color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-slate-700/50',  screen: 'history'  },
-    { label: 'Calendario',           sub: 'Vista mensual',       icon: Calendar,      color: 'text-emerald-400',bg: 'bg-emerald-500/15',border: 'border-slate-700/50',  screen: 'calendar' },
-    { label: 'Fotos de progreso',    sub: 'Compara tu evolución',icon: Camera,        color: 'text-pink-400',   bg: 'bg-pink-500/15',   border: 'border-slate-700/50',  screen: 'photos'   },
-    { label: 'Exportar / Importar',  sub: 'Backup de tus datos', icon: Download,      color: 'text-amber-400',  bg: 'bg-amber-500/15',  border: 'border-slate-700/50',  screen: 'export'   },
+    { label: 'Gráficas de progreso', sub: 'Peso, volumen y 1RM', icon: TrendingUp,    color: 'text-blue-400',   bg: 'bg-blue-500/15',   border: 'border-blue-500/30',   screen: 'charts'       },
+    { label: 'Métricas corporales',  sub: 'Peso y medidas',      icon: Scale,         color: 'text-rose-400',   bg: 'bg-rose-500/15',   border: 'border-rose-500/30',   screen: 'body-metrics' },
+    { label: 'Historial',            sub: 'Todos tus entrenamientos', icon: HistoryIcon, color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-slate-700/50',  screen: 'history'      },
+    { label: 'Calendario',           sub: 'Vista mensual',       icon: Calendar,      color: 'text-emerald-400',bg: 'bg-emerald-500/15',border: 'border-slate-700/50',  screen: 'calendar'     },
+    { label: 'Fotos de progreso',    sub: 'Compara tu evolución',icon: Camera,        color: 'text-pink-400',   bg: 'bg-pink-500/15',   border: 'border-slate-700/50',  screen: 'photos'       },
+    { label: 'Exportar / Importar',  sub: 'Backup de tus datos', icon: Download,      color: 'text-amber-400',  bg: 'bg-amber-500/15',  border: 'border-slate-700/50',  screen: 'export'       },
   ];
 
   return (
@@ -962,11 +1175,11 @@ function ProgressView({ workoutLog, onNavigate }) {
       <h1 className="text-2xl font-bold mb-5">Progreso</h1>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { label: 'Total', value: totalWorkouts, color: 'text-blue-400' },
           { label: 'Este mes', value: thisMonth, color: 'text-violet-400' },
-          { label: 'Ejercicios', value: totalExercises, color: 'text-emerald-400' },
+          { label: 'Racha', value: `${workoutStreak.currentStreak}🔥`, color: 'text-orange-400' },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-slate-800 border border-slate-700/50 rounded-2xl p-4">
             <div className={`text-2xl font-bold ${color}`}>{value}</div>
@@ -974,6 +1187,18 @@ function ProgressView({ workoutLog, onNavigate }) {
           </div>
         ))}
       </div>
+
+      {/* Active cycle banner */}
+      {activeCycle && (
+        <div className="bg-gradient-to-r from-violet-600/20 to-purple-600/20 border border-violet-500/30 rounded-2xl p-4 mb-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Target className="w-4 h-4 text-violet-400" />
+            <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">Ciclo activo</span>
+          </div>
+          <p className="font-bold text-white">{activeCycle.name}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{activeCycle.totalWeeks} semanas · {activeCycle.phases?.length} fases</p>
+        </div>
+      )}
 
       {/* Navigation */}
       <div className="space-y-3">

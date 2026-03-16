@@ -8,6 +8,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { addToOfflineSyncQueue, getOfflineSyncQueue, removeFromOfflineSyncQueue } from './storageHelper';
 
 // Configuración - Obtener de settings
 let supabaseClient = null;
@@ -131,11 +132,13 @@ export async function autoSyncWorkout(dateKey, exercises, metadata, userId = 'de
 
     if (error) {
       console.error('Error auto-syncing workout:', error);
+      await addToOfflineSyncQueue('workout', dateKey, { exercises, metadata: metadata || {} });
     } else {
       console.log(`✅ Auto-synced workout for ${dateKey}`);
     }
   } catch (error) {
     console.error('Error in auto-sync:', error);
+    await addToOfflineSyncQueue('workout', dateKey, { exercises, metadata: metadata || {} });
   }
 }
 
@@ -196,6 +199,56 @@ export async function autoSyncNutrition(dateKey, nutrition, userId = 'default-us
     }
   } catch (error) {
     console.error('Error in auto-sync nutrition:', error);
+  }
+}
+
+/**
+ * Process queued items that failed to sync
+ */
+export async function processOfflineSyncQueue(userId = 'default-user') {
+  if (!supabaseClient || !navigator.onLine) return;
+
+  const { queue } = await getOfflineSyncQueue();
+  if (!queue || queue.length === 0) return;
+
+  console.log(`🔄 Processing ${queue.length} queued sync items...`);
+
+  for (const item of queue) {
+    if (item.retryCount >= 5) {
+      await removeFromOfflineSyncQueue(item.id);
+      continue;
+    }
+
+    try {
+      if (item.type === 'workout') {
+        const { error } = await supabaseClient.from('workouts').upsert({
+          user_id: userId,
+          date: item.dateKey,
+          exercises: item.payload.exercises,
+          metadata: item.payload.metadata || {},
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,date' });
+        if (!error) {
+          await removeFromOfflineSyncQueue(item.id);
+          console.log(`✅ Synced queued workout for ${item.dateKey}`);
+        }
+      } else if (item.type === 'feeling') {
+        const { error } = await supabaseClient.from('feelings').upsert({
+          user_id: userId,
+          date: item.dateKey,
+          ...item.payload
+        }, { onConflict: 'user_id,date' });
+        if (!error) await removeFromOfflineSyncQueue(item.id);
+      } else if (item.type === 'nutrition') {
+        const { error } = await supabaseClient.from('nutrition').upsert({
+          user_id: userId,
+          date: item.dateKey,
+          ...item.payload,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,date' });
+        if (!error) await removeFromOfflineSyncQueue(item.id);
+      }
+    } catch {}
   }
 }
 

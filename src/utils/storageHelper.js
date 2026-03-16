@@ -10,7 +10,14 @@ const STORAGE_KEYS = {
   NUTRITION: 'nutrition-logs',
   PHOTOS: 'progress-photos',
   SETTINGS: 'app-settings',
-  WORKOUT_METADATA: 'workout-metadata'
+  WORKOUT_METADATA: 'workout-metadata',
+  TRAINING_PLAN: 'training-plan',
+  TRAINING_CYCLES: 'training-cycles',
+  PROGRESSION_TARGETS: 'progression-targets',
+  PERSONAL_RECORDS: 'personal-records',
+  BODY_METRICS: 'body-metrics',
+  OFFLINE_SYNC_QUEUE: 'offline-sync-queue',
+  WORKOUT_STREAK: 'workout-streak',
 };
 
 /**
@@ -392,6 +399,237 @@ export async function exportAllData() {
   };
   
   return data;
+}
+
+// ─── Training Plan ────────────────────────────────────────────────────────────
+
+export function getDefaultTrainingPlan() {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    activeCycleId: null,
+    plan: {
+      lunes: {
+        name: 'Empuje Fuerte', emoji: '🔵',
+        muscle: 'Pecho + Hombro + Tríceps', intensity: 'Alta',
+        exercises: [
+          { name: 'Press banca',                weight: '55/60/65 kg',   reps: '8/6-8/5-6' },
+          { name: 'Press inclinado mancuernas', weight: '17.5 kg',       reps: '3×8-10' },
+          { name: 'Cruces polea',              weight: '10-12 kg',       reps: '2×12-15' },
+          { name: 'Press militar',             weight: '45 kg',          reps: '3×6-8' },
+          { name: 'Fondos',                    weight: 'PC + 2.5-5 kg',  reps: '3×6-10' },
+          { name: 'Extensión polea',           weight: '32-35 kg',       reps: '2×10-12' },
+          { name: 'Extensión overhead',        weight: '22-25 kg',       reps: '2×12-15' },
+        ],
+      },
+      martes: {
+        name: 'Tracción', emoji: '🟢',
+        muscle: 'Espalda + Bíceps', intensity: 'Medio-Alto',
+        exercises: [
+          { name: 'Jalón',                      weight: '75/80/80 kg', reps: '10/8-10/6-8' },
+          { name: 'Remo multipower',            weight: '50 kg',       reps: '3×8-10' },
+          { name: 'Remo polea',                 weight: '60 kg',       reps: '2×10-12' },
+          { name: 'Remo unilateral polea',      weight: 'Medio-alto',  reps: '2×10-12' },
+          { name: 'Pull-over',                  weight: '35 kg',       reps: '2×12-15' },
+          { name: 'Curl EZ',                    weight: '30 kg',       reps: '3×8-8-6' },
+          { name: 'Curl polea/martillo',        weight: 'Medio',       reps: '2×10-12' },
+          { name: 'Curl polea baja',            weight: '25 kg',       reps: '2×12-15' },
+        ],
+      },
+      miercoles: {
+        name: 'Pierna Completa', emoji: '🟡',
+        muscle: 'Cuádriceps + Femoral + Gemelos', intensity: 'Media',
+        exercises: [
+          { name: 'Sentadilla',                   weight: '70/80/82.5 kg', reps: '8/6-8/6' },
+          { name: 'Zancadas',                     weight: '17.5 kg',       reps: '2×10-12' },
+          { name: 'Sentadilla pies adelantados',  weight: 'Medio',         reps: '2×10-12' },
+          { name: 'Peso muerto rumano',           weight: '60-70 kg',      reps: '3×8-10' },
+          { name: 'Curl femoral',                 weight: 'Medio',         reps: '2×12-15' },
+          { name: 'Gemelos',                      weight: 'Medio-alto',    reps: '3×15-20' },
+        ],
+      },
+      jueves: {
+        name: 'Bomba / Recuperación', emoji: '🟣',
+        muscle: 'Volumen ligero', intensity: 'Media-Baja',
+        exercises: [
+          { name: 'Elevaciones laterales',      reps: '3×12-15' },
+          { name: 'Pájaros',                    reps: '3×12-15' },
+          { name: 'Press militar ligero',       reps: '2×8-10' },
+          { name: 'Press inclinado multipower', reps: '2×8-10' },
+          { name: 'Aperturas inclinadas',       reps: '2×12-15' },
+          { name: 'Curl polea',                 reps: '2×12-15' },
+          { name: 'Extensión polea',            reps: '2×12-15' },
+          { name: 'Fondos banco',               reps: '2×12-15' },
+        ],
+      },
+      viernes:  { name: 'Fútbol',          emoji: '🔴', muscle: 'HIIT Natural',           intensity: 'Alta',      exercises: [] },
+      sabado:   { name: 'Descanso',         emoji: '🟤', muscle: 'Recuperación activa',    intensity: 'Baja',      exercises: [] },
+      domingo:  { name: 'Pádel (Opcional)', emoji: '⚪', muscle: 'Aeróbico intermitente',  intensity: 'Media',     exercises: [] },
+    }
+  };
+}
+
+export async function getTrainingPlan() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.TRAINING_PLAN);
+    return data?.value ? JSON.parse(data.value) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveTrainingPlan(plan) {
+  try {
+    const updated = { ...plan, updatedAt: new Date().toISOString() };
+    await window.storage.set(STORAGE_KEYS.TRAINING_PLAN, JSON.stringify(updated));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Training Cycles ──────────────────────────────────────────────────────────
+
+export async function getTrainingCycles() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.TRAINING_CYCLES);
+    return data?.value ? JSON.parse(data.value) : { cycles: [], activeCycleId: null };
+  } catch {
+    return { cycles: [], activeCycleId: null };
+  }
+}
+
+export async function saveTrainingCycles(cycles) {
+  try {
+    await window.storage.set(STORAGE_KEYS.TRAINING_CYCLES, JSON.stringify(cycles));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Progression Targets ──────────────────────────────────────────────────────
+
+export async function getProgressionTargets() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.PROGRESSION_TARGETS);
+    return data?.value ? JSON.parse(data.value) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveProgressionTargets(targets) {
+  try {
+    await window.storage.set(STORAGE_KEYS.PROGRESSION_TARGETS, JSON.stringify(targets));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Personal Records ─────────────────────────────────────────────────────────
+
+export async function getPersonalRecords() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.PERSONAL_RECORDS);
+    return data?.value ? JSON.parse(data.value) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function savePersonalRecords(records) {
+  try {
+    await window.storage.set(STORAGE_KEYS.PERSONAL_RECORDS, JSON.stringify(records));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Body Metrics ─────────────────────────────────────────────────────────────
+
+export async function getBodyMetrics() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.BODY_METRICS);
+    return data?.value ? JSON.parse(data.value) : { entries: [] };
+  } catch {
+    return { entries: [] };
+  }
+}
+
+export async function saveBodyMetric(entry) {
+  try {
+    const existing = await getBodyMetrics();
+    const entries = existing.entries || [];
+    const idx = entries.findIndex(e => e.date === entry.date);
+    if (idx >= 0) {
+      entries[idx] = entry;
+    } else {
+      entries.push(entry);
+      entries.sort((a, b) => a.date.localeCompare(b.date));
+    }
+    await window.storage.set(STORAGE_KEYS.BODY_METRICS, JSON.stringify({ entries }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Workout Streak ───────────────────────────────────────────────────────────
+
+export async function getWorkoutStreak() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.WORKOUT_STREAK);
+    return data?.value ? JSON.parse(data.value) : { currentStreak: 0, longestStreak: 0, lastTrainedDate: null };
+  } catch {
+    return { currentStreak: 0, longestStreak: 0, lastTrainedDate: null };
+  }
+}
+
+export async function saveWorkoutStreak(streak) {
+  try {
+    await window.storage.set(STORAGE_KEYS.WORKOUT_STREAK, JSON.stringify(streak));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Offline Sync Queue ───────────────────────────────────────────────────────
+
+export async function getOfflineSyncQueue() {
+  try {
+    const data = await window.storage.get(STORAGE_KEYS.OFFLINE_SYNC_QUEUE);
+    return data?.value ? JSON.parse(data.value) : { queue: [] };
+  } catch {
+    return { queue: [] };
+  }
+}
+
+export async function addToOfflineSyncQueue(type, dateKey, payload) {
+  try {
+    const existing = await getOfflineSyncQueue();
+    const queue = existing.queue || [];
+    queue.push({
+      id: `${type}-${dateKey}-${Date.now()}`,
+      type,
+      dateKey,
+      payload,
+      failedAt: new Date().toISOString(),
+      retryCount: 0
+    });
+    await window.storage.set(STORAGE_KEYS.OFFLINE_SYNC_QUEUE, JSON.stringify({ queue }));
+  } catch {}
+}
+
+export async function removeFromOfflineSyncQueue(id) {
+  try {
+    const existing = await getOfflineSyncQueue();
+    const queue = (existing.queue || []).filter(item => item.id !== id);
+    await window.storage.set(STORAGE_KEYS.OFFLINE_SYNC_QUEUE, JSON.stringify({ queue }));
+  } catch {}
 }
 
 /**
