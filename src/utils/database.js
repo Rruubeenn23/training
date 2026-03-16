@@ -187,7 +187,7 @@ export async function upsertWorkout(userId, date, exercises, metadata = {}) {
 export async function getFeelings(userId, limit = 30) {
   const { data, error } = await supabase
     .from('feelings')
-    .select('date, energy, sleep, motivation, notes')
+    .select('date, energy, sleep, motivation')
     .eq('user_id', userId)
     .order('date', { ascending: false })
     .limit(limit);
@@ -201,7 +201,13 @@ export async function getFeelings(userId, limit = 30) {
 export async function upsertFeeling(userId, date, feeling) {
   const { error } = await supabase
     .from('feelings')
-    .upsert({ user_id: userId, date, ...feeling }, { onConflict: 'user_id,date' });
+    .upsert({
+      user_id: userId,
+      date,
+      energy: feeling.energy,
+      sleep: feeling.sleep,
+      motivation: feeling.motivation
+    }, { onConflict: 'user_id,date' });
   if (error) throw error;
 }
 
@@ -210,7 +216,7 @@ export async function upsertFeeling(userId, date, feeling) {
 export async function getNutrition(userId, limit = 30) {
   const { data, error } = await supabase
     .from('nutrition')
-    .select('date, protein_g, carbs_g, fats_g, water_glasses, notes')
+    .select('date, protein, carbs, fats, water')
     .eq('user_id', userId)
     .order('date', { ascending: false })
     .limit(limit);
@@ -219,8 +225,7 @@ export async function getNutrition(userId, limit = 30) {
   const nutrition = {};
   (data || []).forEach(n => {
     nutrition[n.date] = {
-      protein: n.protein_g, carbs: n.carbs_g, fats: n.fats_g,
-      water: n.water_glasses, notes: n.notes
+      protein: n.protein, carbs: n.carbs, fats: n.fats, water: n.water
     };
   });
   return nutrition;
@@ -231,11 +236,10 @@ export async function upsertNutrition(userId, date, data) {
     .from('nutrition')
     .upsert({
       user_id: userId, date,
-      protein_g: data.protein || 0,
-      carbs_g: data.carbs || 0,
-      fats_g: data.fats || 0,
-      water_glasses: data.water || 0,
-      notes: data.notes || null,
+      protein: data.protein || 0,
+      carbs: data.carbs || 0,
+      fats: data.fats || 0,
+      water: data.water || 0,
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id,date' });
   if (error) throw error;
@@ -330,12 +334,59 @@ export async function createExercise(userId, exercise) {
   return data;
 }
 
+// ─── Progress Photos ──────────────────────────────────────────────────────────
+
+export async function getProgressPhotos(userId) {
+  const { data, error } = await supabase
+    .from('progress_photos')
+    .select('id, date, image_data, angle, notes, weight_kg, created_at')
+    .eq('user_id', userId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+
+  return (data || []).map(p => ({
+    id: p.id,
+    date: p.date,
+    image: p.image_data,
+    angle: p.angle,
+    notes: p.notes,
+    weightKg: p.weight_kg,
+    createdAt: p.created_at
+  }));
+}
+
+export async function insertProgressPhoto(userId, photo) {
+  const { data, error } = await supabase
+    .from('progress_photos')
+    .insert({
+      user_id: userId,
+      date: photo.date || new Date().toISOString().split('T')[0],
+      image_data: photo.image,
+      angle: photo.angle || null,
+      notes: photo.notes || null,
+      weight_kg: photo.weightKg || null
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteProgressPhoto(userId, photoId) {
+  const { error } = await supabase
+    .from('progress_photos')
+    .delete()
+    .eq('id', photoId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
 // ─── Batch Load (on app startup) ─────────────────────────────────────────────
 
 export async function loadAllUserData(userId) {
   const [
     profileRes, settingsRes, memoryRes, planRes, cyclesRes,
-    workoutsRes, feelingsRes, nutritionRes, prRes, metricsRes
+    workoutsRes, feelingsRes, nutritionRes, prRes, metricsRes, photosRes
   ] = await Promise.allSettled([
     getProfile(userId),
     getUserSettings(userId),
@@ -347,6 +398,7 @@ export async function loadAllUserData(userId) {
     getNutrition(userId, 60),
     getPersonalRecords(userId),
     getBodyMetrics(userId),
+    getProgressPhotos(userId),
   ]);
 
   return {
@@ -361,5 +413,6 @@ export async function loadAllUserData(userId) {
     nutrition: nutritionRes.status === 'fulfilled' ? nutritionRes.value : {},
     personalRecords: prRes.status === 'fulfilled' ? prRes.value : {},
     bodyMetrics: metricsRes.status === 'fulfilled' ? metricsRes.value : { entries: [] },
+    progressPhotos: photosRes.status === 'fulfilled' ? photosRes.value : [],
   };
 }

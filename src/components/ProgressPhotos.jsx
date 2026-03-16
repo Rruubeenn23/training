@@ -1,31 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Camera, Image as ImageIcon, Trash2, ArrowLeftRight } from 'lucide-react';
-import { getProgressPhotos, saveProgressPhoto, deleteProgressPhoto } from '../utils/storageHelper';
+import { useAppData } from '../contexts/AppDataContext';
 
 export default function ProgressPhotos({ onClose }) {
-  const [photos, setPhotos] = useState([]);
+  const { progressPhotos: photos, addProgressPhoto, removeProgressPhoto } = useAppData();
   const [compareMode, setCompareMode] = useState(false);
   const [selectedPhotos, setSelectedPhotos] = useState([null, null]);
   const [showUpload, setShowUpload] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [photoNotes, setPhotoNotes] = useState('');
-
-  useEffect(() => {
-    loadPhotos();
-  }, []);
-
-  const loadPhotos = async () => {
-    const savedPhotos = await getProgressPhotos();
-    // Sort by date, newest first
-    const sorted = savedPhotos.sort((a, b) => new Date(b.date) - new Date(a.date));
-    setPhotos(sorted);
-  };
+  const [saving, setSaving] = useState(false);
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('La imagen es demasiado grande. Máximo 5MB.');
       return;
@@ -40,28 +29,25 @@ export default function ProgressPhotos({ onClose }) {
   };
 
   const savePhoto = async () => {
-    if (!previewImage) return;
+    if (!previewImage || saving) return;
+    setSaving(true);
 
     const photo = {
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
+      date: new Date().toISOString().split('T')[0],
       image: previewImage,
       notes: photoNotes
     };
 
-    await saveProgressPhoto(photo);
-    await loadPhotos();
-    
-    // Reset
+    await addProgressPhoto(photo);
     setPreviewImage(null);
     setPhotoNotes('');
     setShowUpload(false);
+    setSaving(false);
   };
 
   const deletePhoto = async (photoId) => {
     if (!confirm('¿Seguro que quieres eliminar esta foto?')) return;
-    await deleteProgressPhoto(photoId);
-    await loadPhotos();
+    await removeProgressPhoto(photoId);
   };
 
   const togglePhotoSelection = (photo, index) => {
@@ -118,9 +104,10 @@ export default function ProgressPhotos({ onClose }) {
 
           <button
             onClick={savePhoto}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition-all"
+            disabled={saving}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-900 text-white font-semibold py-3 rounded-xl transition-all"
           >
-            Guardar foto
+            {saving ? 'Guardando...' : 'Guardar foto'}
           </button>
         </div>
       </div>

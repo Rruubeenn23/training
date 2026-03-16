@@ -5,7 +5,8 @@ import {
   upsertWorkout, upsertFeeling, upsertNutrition,
   upsertTrainingPlan, insertTrainingCycle,
   upsertPersonalRecord, upsertBodyMetric,
-  updateUserSettings, upsertAIMemory
+  updateUserSettings, upsertAIMemory,
+  getProgressPhotos, insertProgressPhoto, deleteProgressPhoto
 } from '../utils/database';
 import {
   checkForPR, updatePersonalRecords,
@@ -35,6 +36,7 @@ export function AppDataProvider({ children }) {
   const [workoutStreak, setWorkoutStreak] = useState({ currentStreak: 0, longestStreak: 0 });
   const [aiMemory, setAiMemory] = useState(null);
   const [userSettings, setUserSettings] = useState({});
+  const [progressPhotos, setProgressPhotos] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   // Load all data when user logs in
@@ -60,6 +62,7 @@ export function AppDataProvider({ children }) {
       setNutrition(data.nutrition || {});
       setAiMemory(data.aiMemory);
       setUserSettings(data.settings || {});
+      setProgressPhotos(data.progressPhotos || []);
 
       // If the user already has data, assume onboarding completed locally
       if (user?.id) {
@@ -108,6 +111,7 @@ export function AppDataProvider({ children }) {
     setWorkoutStreak({ currentStreak: 0, longestStreak: 0 });
     setAiMemory(null);
     setUserSettings({});
+    setProgressPhotos([]);
   };
 
   // ─── Mutations ──────────────────────────────────────────────
@@ -245,6 +249,29 @@ export function AppDataProvider({ children }) {
     }
   }, [user]);
 
+  const addProgressPhoto = useCallback(async (photo) => {
+    if (!user) return null;
+    try {
+      await insertProgressPhoto(user.id, photo);
+      const photos = await getProgressPhotos(user.id);
+      setProgressPhotos(photos);
+      return true;
+    } catch (err) {
+      console.error('Photo save failed:', err);
+      return null;
+    }
+  }, [user]);
+
+  const removeProgressPhoto = useCallback(async (photoId) => {
+    if (!user) return;
+    try {
+      await deleteProgressPhoto(user.id, photoId);
+      setProgressPhotos(prev => prev.filter(p => p.id !== photoId));
+    } catch (err) {
+      console.error('Photo delete failed:', err);
+    }
+  }, [user]);
+
   // ─── Offline Queue ──────────────────────────────────────────
   const queueOfflineSync = (type, key, payload) => {
     try {
@@ -311,6 +338,7 @@ export function AppDataProvider({ children }) {
     savePlan, saveTrainingCycle,
     saveBodyMetric, saveSettings,
     updateMemory, setMemory,
+    progressPhotos, addProgressPhoto, removeProgressPhoto,
     reloadData: loadData,
   };
 
