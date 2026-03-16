@@ -77,7 +77,10 @@ export default function AICoach({ preloadedMessage, onClose }) {
   const insightsFetched = useRef(false);
 
   useEffect(() => {
-    const savedKey = localStorage.getItem('groq_api_key') || userSettings?.groq_api_key || '';
+    // Priority: localStorage override → env key (shared for all users)
+    const savedKey = localStorage.getItem('groq_api_key')
+      || import.meta.env.VITE_GROQ_API_KEY
+      || '';
     if (savedKey) { setApiKey(savedKey); setHasApiKey(true); }
     addWelcomeMessage();
   }, []);
@@ -89,6 +92,8 @@ export default function AICoach({ preloadedMessage, onClose }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const envKey = import.meta.env.VITE_GROQ_API_KEY || '';
 
   const saveApiKey = () => {
     if (!apiKey.trim()) return;
@@ -261,7 +266,25 @@ ${context}`,
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error?.message || `Error ${res.status}`);
+      const msg = err.error?.message || `Error ${res.status}`;
+      // Groq failed_generation: model tried to call a tool but produced invalid JSON.
+      // Retry without tools so the user still gets a text answer.
+      if (msg.toLowerCase().includes('failed_generation') || msg.toLowerCase().includes('failed to call')) {
+        const fallback = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: apiMessages,
+            temperature: 0.7,
+            max_tokens: 2000,
+          }),
+        });
+        if (!fallback.ok) throw new Error(`Error ${fallback.status}`);
+        const fd = await fallback.json();
+        return { text: fd.choices[0].message.content || '', toolResults: [] };
+      }
+      throw new Error(msg);
     }
 
     const data = await res.json();
@@ -453,13 +476,21 @@ ${context}`,
           )}
 
           <div className="bg-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-300 space-y-1">
-              <p>✅ 100% gratis — sin tarjeta</p>
-              <p>⚡ Respuestas en 2-3 segundos</p>
-              <p>🧠 Llama 3.3 70B con herramientas</p>
-            </div>
+            {envKey ? (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-300 space-y-1">
+                <p className="font-semibold">✅ Clave compartida activa</p>
+                <p className="text-green-400/80">La app ya tiene una clave configurada. No necesitas hacer nada.</p>
+              </div>
+            ) : (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-300">
+                <p className="font-semibold mb-1">Sin clave configurada</p>
+                <p className="text-amber-400/80">Añade tu propia clave de Groq (gratuita) para usar el coach.</p>
+              </div>
+            )}
             <div>
-              <label className="block text-slate-300 text-sm font-medium mb-1.5">Groq API Key</label>
+              <label className="block text-slate-300 text-sm font-medium mb-1.5">
+                {envKey ? 'Sobreescribir con tu propia clave (opcional)' : 'Tu Groq API Key'}
+              </label>
               <input
                 type="password"
                 value={apiKey}
@@ -468,21 +499,23 @@ ${context}`,
                 className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-slate-300">
-              <p className="font-semibold text-blue-300 mb-2">Cómo obtener API key:</p>
-              <ol className="list-decimal ml-4 space-y-1">
-                <li>Ve a <span className="text-blue-400">console.groq.com</span></li>
-                <li>Crea cuenta con Google</li>
-                <li>API Keys → Create API Key</li>
-                <li>Copia la key y pégala aquí</li>
-              </ol>
-            </div>
+            {!envKey && (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-slate-300">
+                <p className="font-semibold text-blue-300 mb-2">Cómo obtener API key (gratis):</p>
+                <ol className="list-decimal ml-4 space-y-1">
+                  <li>Ve a <span className="text-blue-400">console.groq.com</span></li>
+                  <li>Crea cuenta con Google</li>
+                  <li>API Keys → Create API Key</li>
+                  <li>Copia la key y pégala aquí</li>
+                </ol>
+              </div>
+            )}
             <button
               onClick={saveApiKey}
               disabled={!apiKey.trim()}
               className="w-full bg-gradient-to-r from-green-600 to-emerald-600 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-all"
             >
-              Guardar y activar
+              Guardar clave
             </button>
           </div>
         </div>

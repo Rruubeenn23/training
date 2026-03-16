@@ -1,121 +1,129 @@
 /**
  * AI Tools — Tool definitions for Groq function calling
  * + executor that bridges AI responses to app state
+ *
+ * NOTE: Keep schemas flat and simple — Groq's llama models
+ * fail with 'failed_generation' on deep nested additionalProperties.
  */
 
-// Persistence is handled by AppDataContext via the setters passed to executeTool
-
-// ─── Tool Schemas (sent to Groq API) ─────────────────────────────────────────
+// ─── Tool Schemas ─────────────────────────────────────────────────────────────
 export const AI_TOOLS = [
   {
     type: 'function',
     function: {
       name: 'replace_weekly_plan',
-      description: 'Replaces the entire weekly training plan with a new one. Use when the user asks for a completely new routine or a new training split.',
+      description: 'Replaces the entire weekly training plan. Each day key is lunes/martes/miercoles/jueves/viernes/sabado/domingo.',
       parameters: {
         type: 'object',
-        required: ['plan', 'reason'],
+        required: ['days', 'reason'],
         properties: {
-          plan: {
+          days: {
             type: 'object',
-            description: 'Map of day name (lunes/martes/miercoles/jueves/viernes/sabado/domingo) to workout object.',
-            additionalProperties: {
-              type: 'object',
-              required: ['name', 'emoji', 'muscle', 'intensity', 'exercises'],
-              properties: {
-                name: { type: 'string', description: 'Workout name, e.g. "Empuje Fuerte"' },
-                emoji: { type: 'string', description: 'Single emoji representing the workout' },
-                muscle: { type: 'string', description: 'Muscle groups targeted' },
-                intensity: { type: 'string', enum: ['Muy Baja', 'Baja', 'Media-Baja', 'Media', 'Medio-Alto', 'Alta', 'Muy Alta'] },
-                exercises: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    required: ['name'],
-                    properties: {
-                      name: { type: 'string' },
-                      weight: { type: 'string', description: 'Target weight(s), e.g. "60/65/70 kg" or "Medio"' },
-                      reps: { type: 'string', description: 'Rep scheme, e.g. "3×8-10" or "8/6-8/5-6"' },
-                      notes: { type: 'string' }
-                    }
-                  }
-                }
-              }
-            }
+            description: 'Object where each key is a Spanish day name and value is a day plan.',
+            properties: {
+              lunes:     { $ref: '#/definitions/dayPlan' },
+              martes:    { $ref: '#/definitions/dayPlan' },
+              miercoles: { $ref: '#/definitions/dayPlan' },
+              jueves:    { $ref: '#/definitions/dayPlan' },
+              viernes:   { $ref: '#/definitions/dayPlan' },
+              sabado:    { $ref: '#/definitions/dayPlan' },
+              domingo:   { $ref: '#/definitions/dayPlan' },
+            },
           },
-          reason: { type: 'string', description: 'Why this plan is recommended' }
-        }
-      }
-    }
+          reason: { type: 'string' },
+        },
+        definitions: {
+          dayPlan: {
+            type: 'object',
+            required: ['name', 'focus', 'exercises'],
+            properties: {
+              name: { type: 'string' },
+              focus: { type: 'string', description: 'Muscle groups, e.g. "pecho, hombros, tríceps"' },
+              exercises: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['name', 'sets', 'reps'],
+                  properties: {
+                    name: { type: 'string' },
+                    sets: { type: 'integer' },
+                    reps: { type: 'string' },
+                    rest_seconds: { type: 'integer' },
+                    notes: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'modify_day_workout',
-      description: 'Modifies the exercises for a single day without changing other days. Use when the user wants to adjust one specific day.',
+      description: 'Modifies exercises for one specific day only.',
       parameters: {
         type: 'object',
-        required: ['day', 'exercises', 'reason'],
+        required: ['day', 'name', 'focus', 'exercises', 'reason'],
         properties: {
           day: { type: 'string', enum: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'] },
-          name: { type: 'string', description: 'Optional new workout name for this day' },
-          muscle: { type: 'string', description: 'Optional new muscle group description' },
-          intensity: { type: 'string', enum: ['Muy Baja', 'Baja', 'Media-Baja', 'Media', 'Medio-Alto', 'Alta', 'Muy Alta'] },
+          name: { type: 'string' },
+          focus: { type: 'string' },
           exercises: {
             type: 'array',
             items: {
               type: 'object',
-              required: ['name'],
+              required: ['name', 'sets', 'reps'],
               properties: {
                 name: { type: 'string' },
-                weight: { type: 'string' },
+                sets: { type: 'integer' },
                 reps: { type: 'string' },
-                notes: { type: 'string' }
-              }
-            }
+                rest_seconds: { type: 'integer' },
+                notes: { type: 'string' },
+              },
+            },
           },
-          reason: { type: 'string' }
-        }
-      }
-    }
+          reason: { type: 'string' },
+        },
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'create_training_cycle',
-      description: 'Creates a multi-week periodized training cycle (e.g. strength → hypertrophy → deload). Sets it as the active cycle.',
+      description: 'Creates a periodized training cycle (e.g. strength → hypertrophy → deload).',
       parameters: {
         type: 'object',
-        required: ['name', 'startDate', 'totalWeeks', 'phases', 'reason'],
+        required: ['name', 'totalWeeks', 'reason'],
         properties: {
-          name: { type: 'string', description: 'Cycle name, e.g. "Ciclo Fuerza — Marzo 2026"' },
-          startDate: { type: 'string', description: 'Start date YYYY-MM-DD' },
-          totalWeeks: { type: 'integer', minimum: 2, maximum: 16 },
+          name: { type: 'string' },
+          totalWeeks: { type: 'integer' },
           phases: {
             type: 'array',
             items: {
               type: 'object',
-              required: ['name', 'type', 'weeks'],
+              required: ['name', 'weeks', 'repScheme'],
               properties: {
                 name: { type: 'string' },
-                type: { type: 'string', enum: ['strength', 'hypertrophy', 'deload', 'power'] },
-                weeks: { type: 'array', items: { type: 'integer' }, description: 'Week numbers (1-indexed)' },
-                repScheme: { type: 'string', description: 'Rep range for this phase, e.g. "4-6" or "8-12"' },
-                intensityModifier: { type: 'number', description: 'Multiplier on weights, e.g. 0.7 for deload' },
-                notes: { type: 'string' }
-              }
-            }
+                weeks: { type: 'integer', description: 'Number of weeks for this phase' },
+                repScheme: { type: 'string', description: 'e.g. "4-6" or "8-12"' },
+                notes: { type: 'string' },
+              },
+            },
           },
-          reason: { type: 'string' }
-        }
-      }
-    }
+          reason: { type: 'string' },
+        },
+      },
+    },
   },
   {
     type: 'function',
     function: {
       name: 'update_exercise_targets',
-      description: 'Updates weight and rep targets for specific exercises across the weekly plan. Use when the user needs to progress or adjust specific lifts.',
+      description: 'Updates weight/rep targets for specific exercises in the plan.',
       parameters: {
         type: 'object',
         required: ['updates', 'reason'],
@@ -127,40 +135,20 @@ export const AI_TOOLS = [
               required: ['exerciseName'],
               properties: {
                 exerciseName: { type: 'string' },
-                weight: { type: 'string', description: 'New target weight' },
-                reps: { type: 'string', description: 'New rep scheme' },
-                notes: { type: 'string' }
-              }
-            }
+                sets: { type: 'integer' },
+                reps: { type: 'string' },
+                notes: { type: 'string' },
+              },
+            },
           },
-          reason: { type: 'string' }
-        }
-      }
-    }
+          reason: { type: 'string' },
+        },
+      },
+    },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'read_current_plan',
-      description: 'Returns the current weekly training plan. Use this before suggesting changes to understand the current state.',
-      parameters: {
-        type: 'object',
-        properties: {}
-      }
-    }
-  }
 ];
 
 // ─── Tool Executor ────────────────────────────────────────────────────────────
-
-/**
- * Execute a tool call from the AI
- * @param {string} toolName
- * @param {object} args
- * @param {object} appState - { trainingPlan, trainingCycles }
- * @param {object} appSetters - { setTrainingPlan, setTrainingCycles }
- * @returns {{ success: boolean, summary: string, undoData: object|null, readResult: string|null }}
- */
 export async function executeTool(toolName, args, appState, appSetters) {
   const { trainingPlan, trainingCycles } = appState;
   const { setTrainingPlan, setTrainingCycles } = appSetters;
@@ -169,47 +157,33 @@ export async function executeTool(toolName, args, appState, appSetters) {
     switch (toolName) {
 
       case 'replace_weekly_plan': {
-        const undoData = { plan: { ...trainingPlan } };
-        const newPlan = {
-          ...(trainingPlan || {}),
-          version: (trainingPlan?.version || 0) + 1,
-          updatedAt: new Date().toISOString(),
-          plan: args.plan
-        };
-        await setTrainingPlan(newPlan);
-        const dayCount = Object.keys(args.plan).length;
-        const exerciseCount = Object.values(args.plan).reduce((a, d) => a + (d.exercises?.length || 0), 0);
+        const undoData = { plan: trainingPlan ? { ...trainingPlan } : null };
+        const planData = args.days || args.plan || {};
+        await setTrainingPlan({ plan: planData, name: trainingPlan?.name || 'Mi Plan' });
+        const dayCount = Object.keys(planData).length;
+        const exCount = Object.values(planData).reduce((a, d) => a + (d.exercises?.length || 0), 0);
         return {
           success: true,
-          summary: `Plan semanal reemplazado: ${dayCount} días, ${exerciseCount} ejercicios totales. Razón: ${args.reason}`,
-          undoData
+          summary: `Plan reemplazado: ${dayCount} días, ${exCount} ejercicios. Razón: ${args.reason}`,
+          undoData,
         };
       }
 
       case 'modify_day_workout': {
-        if (!trainingPlan?.plan) {
-          return { success: false, summary: 'No hay plan activo para modificar.', undoData: null };
-        }
+        if (!trainingPlan?.plan) return { success: false, summary: 'No hay plan activo.', undoData: null };
         const undoData = { plan: { ...trainingPlan } };
-        const currentDay = trainingPlan.plan[args.day] || {};
-        const updatedDay = {
-          ...currentDay,
-          exercises: args.exercises,
-          ...(args.name && { name: args.name }),
-          ...(args.muscle && { muscle: args.muscle }),
-          ...(args.intensity && { intensity: args.intensity }),
+        const currentPlanDays = trainingPlan.plan.days || trainingPlan.plan;
+        const updatedDays = {
+          ...currentPlanDays,
+          [args.day]: { name: args.name, focus: args.focus, exercises: args.exercises },
         };
-        const newPlan = {
-          ...trainingPlan,
-          updatedAt: new Date().toISOString(),
-          plan: { ...trainingPlan.plan, [args.day]: updatedDay }
-        };
-        await setTrainingPlan(newPlan);
-        const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[args.day];
+        const newPlanData = trainingPlan.plan.days ? { ...trainingPlan.plan, days: updatedDays } : updatedDays;
+        await setTrainingPlan({ plan: newPlanData, name: trainingPlan.name });
+        const dayNames = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' };
         return {
           success: true,
-          summary: `${dayName} actualizado: ${args.exercises.length} ejercicios. Razón: ${args.reason}`,
-          undoData
+          summary: `${dayNames[args.day]} actualizado: ${args.exercises.length} ejercicios (${args.focus}). Razón: ${args.reason}`,
+          undoData,
         };
       }
 
@@ -219,77 +193,56 @@ export async function executeTool(toolName, args, appState, appSetters) {
           id,
           name: args.name,
           createdAt: new Date().toISOString(),
-          startDate: args.startDate,
+          startDate: new Date().toISOString().split('T')[0],
           totalWeeks: args.totalWeeks,
-          phases: args.phases,
-          reason: args.reason
+          phases: args.phases || [],
+          reason: args.reason,
         };
-        const currentCycles = trainingCycles || { cycles: [], activeCycleId: null };
-        const updated = {
-          cycles: [...currentCycles.cycles, newCycle],
-          activeCycleId: id
-        };
-        await setTrainingCycles(updated);
-        const phaseNames = args.phases.map(p => `${p.name} (${p.weeks.length} sem.)`).join(' → ');
+        await setTrainingCycles({ cycles: newCycle });
+        const phaseNames = (args.phases || []).map(p => p.name).join(' → ');
         return {
           success: true,
-          summary: `Ciclo creado: "${args.name}" — ${args.totalWeeks} semanas. Fases: ${phaseNames}`,
-          undoData: null
+          summary: `Ciclo creado: "${args.name}" — ${args.totalWeeks} semanas${phaseNames ? '. Fases: ' + phaseNames : ''}`,
+          undoData: null,
         };
       }
 
       case 'update_exercise_targets': {
-        if (!trainingPlan?.plan) {
-          return { success: false, summary: 'No hay plan activo.', undoData: null };
-        }
+        if (!trainingPlan?.plan) return { success: false, summary: 'No hay plan activo.', undoData: null };
         const undoData = { plan: { ...trainingPlan } };
-        const updatedPlan = { ...trainingPlan.plan };
-        let updatedCount = 0;
+        const planDays = trainingPlan.plan.days || trainingPlan.plan;
+        const updatedDays = { ...planDays };
 
         args.updates.forEach(update => {
-          Object.keys(updatedPlan).forEach(day => {
-            const exercises = updatedPlan[day].exercises || [];
-            const exIdx = exercises.findIndex(e => e.name.toLowerCase() === update.exerciseName.toLowerCase());
-            if (exIdx >= 0) {
-              const updatedExercises = [...exercises];
-              updatedExercises[exIdx] = {
-                ...updatedExercises[exIdx],
-                ...(update.weight && { weight: update.weight }),
-                ...(update.reps && { reps: update.reps }),
-                ...(update.notes && { notes: update.notes }),
-              };
-              updatedPlan[day] = { ...updatedPlan[day], exercises: updatedExercises };
-              updatedCount++;
-            }
+          Object.keys(updatedDays).forEach(day => {
+            const exercises = (updatedDays[day].exercises || []).map(e => {
+              if (e.name.toLowerCase() === update.exerciseName.toLowerCase()) {
+                return {
+                  ...e,
+                  ...(update.sets && { sets: update.sets }),
+                  ...(update.reps && { reps: update.reps }),
+                  ...(update.notes && { notes: update.notes }),
+                };
+              }
+              return e;
+            });
+            updatedDays[day] = { ...updatedDays[day], exercises };
           });
         });
 
-        const newPlan = { ...trainingPlan, plan: updatedPlan, updatedAt: new Date().toISOString() };
-        await setTrainingPlan(newPlan);
-        const names = args.updates.map(u => u.exerciseName).join(', ');
+        const newPlanData = trainingPlan.plan.days ? { ...trainingPlan.plan, days: updatedDays } : updatedDays;
+        await setTrainingPlan({ plan: newPlanData, name: trainingPlan.name });
         return {
           success: true,
-          summary: `Objetivos actualizados para: ${names} (${updatedCount} entradas modificadas). Razón: ${args.reason}`,
-          undoData
+          summary: `Objetivos actualizados: ${args.updates.map(u => u.exerciseName).join(', ')}. Razón: ${args.reason}`,
+          undoData,
         };
-      }
-
-      case 'read_current_plan': {
-        if (!trainingPlan?.plan) {
-          return { success: true, summary: '', readResult: 'No hay plan activo.', undoData: null };
-        }
-        const planSummary = Object.entries(trainingPlan.plan).map(([day, w]) => {
-          const dayName = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' }[day];
-          const exList = w.exercises?.map(e => `${e.name} (${e.weight || '—'} · ${e.reps || '—'})`).join(', ') || 'Sin ejercicios';
-          return `${dayName}: ${w.name} [${w.intensity}] — ${exList}`;
-        }).join('\n');
-        return { success: true, summary: '', readResult: planSummary, undoData: null };
       }
 
       default:
         return { success: false, summary: `Herramienta desconocida: ${toolName}`, undoData: null };
     }
   } catch (err) {
-    return { success: false, summary: `Error ejecutando ${toolName}: ${err.message}`, undoData: null };
+    return { success: false, summary: `Error en ${toolName}: ${err.message}`, undoData: null };
   }
 }
