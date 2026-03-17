@@ -84,6 +84,8 @@ export default function AICoach({ preloadedMessage, onClose }) {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const insightsFetched = useRef(false);
+  const lastSendTime = useRef(0);
+  const RATE_LIMIT_MS = 3000; // min 3s between messages
 
   useEffect(() => {
     // Priority: localStorage override → DB user settings → env key (shared for all users)
@@ -440,6 +442,9 @@ ${context}`,
   // ─── Send Message ───────────────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!inputMessage.trim() || !hasApiKey || isLoading) return;
+    const now = Date.now();
+    if (now - lastSendTime.current < RATE_LIMIT_MS) return;
+    lastSendTime.current = now;
 
     const msgText = inputMessage;
     const userMsg = { role: 'user', content: msgText, timestamp: new Date() };

@@ -431,11 +431,29 @@ export default function OnboardingPage() {
     else setField(field, [...withoutNone, value]);
   };
 
+  const NUMERIC_BOUNDS = {
+    age:    { min: 10, max: 100 },
+    weight: { min: 30, max: 300 },
+    height: { min: 100, max: 250 },
+  };
+
   const canProceed = () => {
     if (step.optional) return true;
     if (step.type === 'plan_select') return !!getValue(step.field);
     if (step.type === 'text' || step.type === 'textarea') return (getValue(step.field) || '').trim().length > 0;
-    if (step.type === 'triple') return step.fields.every(f => getValue(f.key) !== '');
+    if (step.type === 'triple') {
+      return step.fields.every(f => {
+        const val = getValue(f.key);
+        if (val === '') return false;
+        if (f.type === 'number') {
+          const num = parseFloat(val);
+          if (isNaN(num) || num <= 0) return false;
+          const bounds = NUMERIC_BOUNDS[f.key];
+          if (bounds && (num < bounds.min || num > bounds.max)) return false;
+        }
+        return true;
+      });
+    }
     if (step.type === 'select') return getValue(step.field) !== '';
     if (step.type === 'multiselect') return step.optional || getMulti(step.field).length > 0;
     return true;
@@ -598,19 +616,36 @@ Todo en español. Incluye solo días de entrenamiento, omite descansos.`;
           {/* Triple input */}
           {step.type === 'triple' && (
             <div className="grid grid-cols-3 gap-3">
-              {step.fields.map(f => (
-                <div key={f.key}>
-                  <label className="block text-slate-400 text-xs mb-1.5">{f.label}</label>
-                  <input
-                    type={f.type}
-                    value={getValue(f.key)}
-                    onChange={e => setField(f.key, e.target.value)}
-                    placeholder={f.placeholder}
-                    className="w-full bg-slate-800/60 border border-slate-600 rounded-xl px-3 py-3 text-white placeholder-slate-500 text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                  />
-                  <span className="block text-center text-slate-500 text-xs mt-1">{f.unit}</span>
-                </div>
-              ))}
+              {step.fields.map(f => {
+                const val = getValue(f.key);
+                const bounds = NUMERIC_BOUNDS[f.key];
+                const num = parseFloat(val);
+                const outOfBounds = val !== '' && bounds && (!isNaN(num)) && (num < bounds.min || num > bounds.max);
+                return (
+                  <div key={f.key}>
+                    <label className="block text-slate-400 text-xs mb-1.5">{f.label}</label>
+                    <input
+                      type={f.type}
+                      value={val}
+                      onChange={e => setField(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                      min={bounds?.min}
+                      max={bounds?.max}
+                      className={`w-full bg-slate-800/60 border rounded-xl px-3 py-3 text-white placeholder-slate-500 text-center focus:outline-none focus:ring-1 ${
+                        outOfBounds
+                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                          : 'border-slate-600 focus:border-blue-500 focus:ring-blue-500/30'
+                      }`}
+                    />
+                    <span className="block text-center text-slate-500 text-xs mt-1">{f.unit}</span>
+                    {outOfBounds && (
+                      <span className="block text-center text-red-400 text-xs mt-0.5">
+                        {bounds.min}–{bounds.max}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

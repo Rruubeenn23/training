@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 import {
   loadAllUserData,
   upsertWorkout, upsertFeeling, upsertNutrition,
@@ -20,9 +21,11 @@ const AppDataContext = createContext(null);
 // ─── Offline Queue Helpers ─────────────────────────────────────────────────────
 const OFFLINE_QUEUE_KEY = 'offline-sync-queue';
 const MAX_RETRIES = 5;
+const QUEUE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export function AppDataProvider({ children }) {
   const { user } = useAuth();
+  const toast = useToast();
 
   const [workoutLog, setWorkoutLog] = useState({});
   const [workoutMeta, setWorkoutMeta] = useState({});
@@ -134,9 +137,10 @@ export function AppDataProvider({ children }) {
       } catch (err) {
         console.error('Workout sync failed, queuing:', err);
         queueOfflineSync('workout', dateKey, { exercises, metadata });
+        toast.warning('Entrenamiento guardado localmente. Se sincronizará cuando haya conexión.');
       }
     }
-  }, [user, workoutLog, progressionTargets]);
+  }, [user, workoutLog, progressionTargets, toast]);
 
   const handleSetSaved = useCallback(async (exerciseName, weight, reps, dateKey, newLog) => {
     await saveWorkout(dateKey, newLog[dateKey] || newLog);
@@ -161,18 +165,26 @@ export function AppDataProvider({ children }) {
     if (user) {
       try {
         await upsertFeeling(user.id, dateKey, feeling);
-      } catch {}
+      } catch (err) {
+        console.error('Feeling sync failed, queuing:', err);
+        queueOfflineSync('feeling', dateKey, feeling);
+        toast.warning('Sensación guardada localmente. Se sincronizará cuando haya conexión.');
+      }
     }
-  }, [user]);
+  }, [user, toast]);
 
   const saveNutrition = useCallback(async (dateKey, data) => {
     setNutrition(prev => ({ ...prev, [dateKey]: data }));
     if (user) {
       try {
         await upsertNutrition(user.id, dateKey, data);
-      } catch {}
+      } catch (err) {
+        console.error('Nutrition sync failed, queuing:', err);
+        queueOfflineSync('nutrition', dateKey, data);
+        toast.warning('Nutrición guardada localmente. Se sincronizará cuando haya conexión.');
+      }
     }
-  }, [user]);
+  }, [user, toast]);
 
   const savePlan = useCallback(async (planData, name) => {
     const newPlan = {
@@ -276,7 +288,7 @@ export function AppDataProvider({ children }) {
   const queueOfflineSync = (type, key, payload) => {
     try {
       const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
-      queue.push({ id: `${type}-${key}-${Date.now()}`, type, key, payload, retries: 0 });
+      queue.push({ id: `${type}-${key}-${Date.now()}`, type, key, payload, retries: 0, queuedAt: Date.now() });
       localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
     } catch (err) {
       console.error('Failed to queue offline sync:', err);
@@ -291,8 +303,15 @@ export function AppDataProvider({ children }) {
     } catch { return; }
     if (queue.length === 0) return;
 
+    const now = Date.now();
     const remaining = [];
+    let synced = 0;
     for (const item of queue) {
+      // Drop items older than TTL
+      if (item.queuedAt && now - item.queuedAt > QUEUE_TTL_MS) {
+        console.warn(`Dropping expired queue item: ${item.id}`);
+        continue;
+      }
       try {
         if (item.type === 'workout') {
           await upsertWorkout(user.id, item.key, item.payload.exercises, item.payload.metadata || {});
@@ -301,6 +320,7 @@ export function AppDataProvider({ children }) {
         } else if (item.type === 'nutrition') {
           await upsertNutrition(user.id, item.key, item.payload);
         }
+        synced++;
         // Success — don't re-add to queue
       } catch {
         if ((item.retries || 0) < MAX_RETRIES) {
@@ -310,10 +330,10 @@ export function AppDataProvider({ children }) {
       }
     }
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-    if (remaining.length === 0 && queue.length > 0) {
-      console.info(`Offline queue drained: ${queue.length} items synced successfully`);
+    if (synced > 0) {
+      toast.success(`${synced} elemento${synced > 1 ? 's' : ''} sincronizado${synced > 1 ? 's' : ''} con el servidor.`);
     }
-  }, [user]);
+  }, [user, toast]);
 
   // Drain queue on mount and when coming back online
   useEffect(() => {

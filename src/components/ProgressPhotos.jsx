@@ -2,6 +2,24 @@ import React, { useState } from 'react';
 import { Camera, Image as ImageIcon, Trash2, ArrowLeftRight } from 'lucide-react';
 import { useAppData } from '../contexts/AppDataContext';
 
+// Compress image using canvas — reduces base64 size by ~70%
+function compressImage(dataUrl, maxDimension = 900, quality = 0.75) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(maxDimension / img.width, maxDimension / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback to original on error
+    img.src = dataUrl;
+  });
+}
+
 export default function ProgressPhotos({ onClose }) {
   const { progressPhotos: photos, addProgressPhoto, removeProgressPhoto } = useAppData();
   const [compareMode, setCompareMode] = useState(false);
@@ -15,14 +33,15 @@ export default function ProgressPhotos({ onClose }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('La imagen es demasiado grande. Máximo 5MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      alert('La imagen es demasiado grande. Máximo 15MB.');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setPreviewImage(event.target.result);
+    reader.onload = async (event) => {
+      const compressed = await compressImage(event.target.result);
+      setPreviewImage(compressed);
       setShowUpload(true);
     };
     reader.readAsDataURL(file);

@@ -28,16 +28,48 @@ function AppLoading() {
   );
 }
 
+function SlowLoadBanner({ onRetry }) {
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500/90 backdrop-blur-sm px-4 py-2 flex items-center justify-between gap-3 text-amber-950 text-sm">
+      <span>⚠️ La carga tardó más de lo esperado. Los datos pueden estar incompletos.</span>
+      <button
+        onClick={onRetry}
+        className="flex-shrink-0 bg-amber-950/20 hover:bg-amber-950/30 px-3 py-1 rounded-lg font-semibold transition-colors"
+      >
+        Reintentar
+      </button>
+    </div>
+  );
+}
+
 function RequireAuth({ children }) {
   const { user, loading, isOnboardingComplete } = useAuth();
-  const { dataLoading } = useAppData();
+  const { dataLoading, reloadData } = useAppData();
   const location = useLocation();
   // Safety timeout — if loading takes more than 8s, stop blocking the UI
   const [timedOut, setTimedOut] = useState(false);
+  const [showBanner, setShowBanner] = useState(false);
+
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 8000);
+    const t = setTimeout(() => {
+      setTimedOut(true);
+      setShowBanner(true);
+    }, 8000);
     return () => clearTimeout(t);
   }, []);
+
+  // Hide banner once data finishes loading
+  useEffect(() => {
+    if (!dataLoading && timedOut) setShowBanner(false);
+  }, [dataLoading, timedOut]);
+
+  const handleRetry = () => {
+    setShowBanner(false);
+    setTimedOut(false);
+    reloadData();
+    const t = setTimeout(() => setTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  };
 
   const isLoading = !timedOut && (loading || (user && dataLoading));
 
@@ -48,7 +80,12 @@ function RequireAuth({ children }) {
     return <Navigate to="/auth" replace state={{ from: location }} />;
   }
   if (!isOnboardingComplete) return <Navigate to="/onboarding" replace />;
-  return children;
+  return (
+    <>
+      {showBanner && <SlowLoadBanner onRetry={handleRetry} />}
+      {children}
+    </>
+  );
 }
 
 function AuthGate({ children }) {
