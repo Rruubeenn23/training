@@ -3,7 +3,8 @@
  * + executor that bridges AI responses to app state
  *
  * NOTE: Keep schemas flat and simple — Groq's llama models
- * fail with 'failed_generation' on deep nested additionalProperties.
+ * fail with 'failed_generation' on deep nested additionalProperties and $ref.
+ * Use arrays of objects instead of nested object maps so required fields are enforced per item.
  */
 
 // ─── Tool Schemas ─────────────────────────────────────────────────────────────
@@ -12,49 +13,48 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'replace_weekly_plan',
-      description: 'Replaces the entire weekly training plan. Each day key is lunes/martes/miercoles/jueves/viernes/sabado/domingo.',
+      description: 'Replaces the entire weekly training plan. Provide only the days that should have workouts (skip rest days). Each item in the days array must have a day key (lunes/martes/miercoles/jueves/viernes/sabado/domingo), a name, a focus, and an exercises array.',
       parameters: {
         type: 'object',
         required: ['days', 'reason'],
         properties: {
           days: {
-            type: 'object',
-            description: 'Object where each key is a Spanish day name and value is a day plan.',
-            properties: {
-              lunes:     { $ref: '#/definitions/dayPlan' },
-              martes:    { $ref: '#/definitions/dayPlan' },
-              miercoles: { $ref: '#/definitions/dayPlan' },
-              jueves:    { $ref: '#/definitions/dayPlan' },
-              viernes:   { $ref: '#/definitions/dayPlan' },
-              sabado:    { $ref: '#/definitions/dayPlan' },
-              domingo:   { $ref: '#/definitions/dayPlan' },
-            },
-          },
-          reason: { type: 'string' },
-        },
-        definitions: {
-          dayPlan: {
-            type: 'object',
-            required: ['name', 'focus', 'exercises'],
-            properties: {
-              name: { type: 'string' },
-              focus: { type: 'string', description: 'Muscle groups, e.g. "pecho, hombros, tríceps"' },
-              exercises: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  required: ['name', 'sets', 'reps'],
-                  properties: {
-                    name: { type: 'string' },
-                    sets: { type: 'integer' },
-                    reps: { type: 'string' },
-                    rest_seconds: { type: 'integer' },
-                    notes: { type: 'string' },
+            type: 'array',
+            description: 'Array of day plans. Only include days with actual workouts.',
+            items: {
+              type: 'object',
+              required: ['day', 'name', 'focus', 'exercises'],
+              properties: {
+                day: {
+                  type: 'string',
+                  description: 'Day of week in Spanish: lunes, martes, miercoles, jueves, viernes, sabado, domingo',
+                },
+                name: {
+                  type: 'string',
+                  description: 'Workout name, e.g. "Empuje", "Tracción", "Pierna"',
+                },
+                focus: {
+                  type: 'string',
+                  description: 'Muscle groups targeted, e.g. "pecho, hombros, tríceps"',
+                },
+                exercises: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    required: ['name', 'sets', 'reps'],
+                    properties: {
+                      name: { type: 'string' },
+                      sets: { type: 'integer' },
+                      reps: { type: 'string', description: 'e.g. "8-10" or "3x10"' },
+                      rest_seconds: { type: 'integer' },
+                      notes: { type: 'string' },
+                    },
                   },
                 },
               },
             },
           },
+          reason: { type: 'string', description: 'Brief explanation of why this plan was created' },
         },
       },
     },
@@ -158,7 +158,19 @@ export async function executeTool(toolName, args, appState, appSetters) {
 
       case 'replace_weekly_plan': {
         const undoData = { plan: trainingPlan ? { ...trainingPlan } : null };
-        const planData = args.days || args.plan || {};
+        // Convert array format → object format { lunes: { name, focus, exercises }, ... }
+        let planData = {};
+        if (Array.isArray(args.days)) {
+          args.days.forEach(d => {
+            if (d.day) planData[d.day] = { name: d.name, focus: d.focus, exercises: d.exercises || [] };
+          });
+        } else if (args.days && typeof args.days === 'object') {
+          // Fallback: model sent object format (old schema)
+          planData = args.days;
+        }
+        if (Object.keys(planData).length === 0) {
+          return { success: false, summary: 'El plan generado está vacío.', undoData: null };
+        }
         await setTrainingPlan({ plan: planData, name: trainingPlan?.name || 'Mi Plan' });
         const dayCount = Object.keys(planData).length;
         const exCount = Object.values(planData).reduce((a, d) => a + (d.exercises?.length || 0), 0);
