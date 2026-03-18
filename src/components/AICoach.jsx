@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Brain, Settings, Sparkles, MessageCircle, Zap, AlertCircle,
   RotateCcw, ChevronLeft, Undo2, Dumbbell, Target,
-  TrendingUp, Calendar, RefreshCw, Key
+  TrendingUp, Calendar, RefreshCw, Key, Search, MapPin,
+  Phone, Globe, Star, ExternalLink, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAppData } from '../contexts/AppDataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,6 +13,225 @@ import { buildMemoryPrompt, extractMemoryDeltaFromConversation } from '../utils/
 import { getAllExercises, getExerciseHistory } from '../utils/storageHelper';
 import { getTodayFullInfo } from '../utils/dateUtils';
 import { AI_TOOLS, executeTool } from '../utils/aiTools';
+
+// ─── Markdown Renderer ────────────────────────────────────────────────────────
+function MarkdownMessage({ content }) {
+  return (
+    <div className="text-sm">
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+        em: ({ children }) => <em className="italic text-slate-300">{children}</em>,
+        h1: ({ children }) => <h1 className="text-base font-bold text-white mb-2 mt-3 first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-bold text-white mb-1.5 mt-3 first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold text-purple-300 mb-1 mt-2 first:mt-0">{children}</h3>,
+        ul: ({ children }) => <ul className="space-y-1 mb-2 ml-1">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2 ml-1">{children}</ol>,
+        li: ({ children }) => (
+          <li className="flex items-start gap-1.5 text-slate-200">
+            <span className="text-purple-400 mt-1 flex-shrink-0 text-xs">•</span>
+            <span>{children}</span>
+          </li>
+        ),
+        code: ({ inline, children }) => inline
+          ? <code className="bg-slate-700/80 text-cyan-300 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
+          : <pre className="bg-slate-900/80 border border-slate-700/50 rounded-xl p-3 overflow-x-auto mb-2 mt-1"><code className="text-cyan-300 text-xs font-mono">{children}</code></pre>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors">
+            {children}
+          </a>
+        ),
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-purple-500/60 pl-3 my-2 text-slate-300 italic">
+            {children}
+          </blockquote>
+        ),
+        hr: () => <hr className="border-slate-700/60 my-3" />,
+        table: ({ children }) => (
+          <div className="overflow-x-auto mb-2">
+            <table className="text-xs w-full border-collapse">{children}</table>
+          </div>
+        ),
+        th: ({ children }) => <th className="border border-slate-700 px-2 py-1 bg-slate-800 font-semibold text-slate-200 text-left">{children}</th>,
+        td: ({ children }) => <td className="border border-slate-700 px-2 py-1 text-slate-300">{children}</td>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+    </div>
+  );
+}
+
+// ─── Place Card ───────────────────────────────────────────────────────────────
+function PlaceCard({ place }) {
+  const [imgError, setImgError] = useState(false);
+  const mapsUrl = place.latitude && place.longitude
+    ? `https://www.google.com/maps?q=${place.latitude},${place.longitude}`
+    : `https://www.google.com/maps/search/${encodeURIComponent((place.title || '') + ' ' + (place.address || ''))}`;
+
+  const stars = place.rating ? Math.round(place.rating) : 0;
+
+  return (
+    <div className="bg-slate-800/80 border border-slate-700/50 rounded-2xl overflow-hidden hover:border-slate-600/70 transition-all">
+      {/* Thumbnail */}
+      {place.thumbnailUrl && !imgError && (
+        <div className="h-28 overflow-hidden bg-slate-900">
+          <img
+            src={place.thumbnailUrl}
+            alt={place.title}
+            className="w-full h-full object-cover opacity-90"
+            onError={() => setImgError(true)}
+          />
+        </div>
+      )}
+      <div className="p-3">
+        {/* Name + category */}
+        <div className="mb-1.5">
+          <p className="font-semibold text-white text-sm leading-tight">{place.title}</p>
+          {place.category && (
+            <p className="text-xs text-slate-500 mt-0.5">{place.category}</p>
+          )}
+        </div>
+
+        {/* Rating */}
+        {place.rating && (
+          <div className="flex items-center gap-1 mb-1.5">
+            <div className="flex">
+              {[1,2,3,4,5].map(i => (
+                <Star key={i} size={10} className={i <= stars ? 'text-amber-400 fill-amber-400' : 'text-slate-600'} />
+              ))}
+            </div>
+            <span className="text-xs text-amber-400 font-medium">{place.rating}</span>
+            {place.ratingCount && (
+              <span className="text-xs text-slate-500">({place.ratingCount})</span>
+            )}
+          </div>
+        )}
+
+        {/* Address */}
+        {place.address && (
+          <div className="flex items-start gap-1.5 mb-1 text-xs text-slate-400">
+            <MapPin size={11} className="flex-shrink-0 mt-0.5 text-slate-500" />
+            <span className="leading-tight">{place.address}</span>
+          </div>
+        )}
+
+        {/* Phone */}
+        {place.phoneNumber && (
+          <div className="flex items-center gap-1.5 mb-1 text-xs text-slate-400">
+            <Phone size={11} className="flex-shrink-0 text-slate-500" />
+            <a href={`tel:${place.phoneNumber}`} className="hover:text-white transition-colors">
+              {place.phoneNumber}
+            </a>
+          </div>
+        )}
+
+        {/* Website */}
+        {place.website && (
+          <div className="flex items-center gap-1.5 mb-2.5 text-xs text-slate-400">
+            <Globe size={11} className="flex-shrink-0 text-slate-500" />
+            <a href={place.website} target="_blank" rel="noopener noreferrer"
+              className="hover:text-blue-400 transition-colors truncate max-w-[160px]">
+              {place.website.replace(/^https?:\/\/(www\.)?/, '')}
+            </a>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 text-xs font-medium hover:bg-blue-600/30 transition-all"
+          >
+            <MapPin size={11} /> Maps
+          </a>
+          {place.phoneNumber && (
+            <a
+              href={`tel:${place.phoneNumber}`}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-xs font-medium hover:bg-emerald-600/30 transition-all"
+            >
+              <Phone size={11} /> Llamar
+            </a>
+          )}
+          {place.website && (
+            <a
+              href={place.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-700/50 border border-slate-600/40 text-slate-300 text-xs font-medium hover:bg-slate-700 transition-all"
+            >
+              <Globe size={11} /> Web
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Search Results Card ──────────────────────────────────────────────────────
+function SearchResultsCard({ data }) {
+  const [expanded, setExpanded] = useState(true);
+  const { places, organic, query } = data;
+
+  return (
+    <div className="mb-3">
+      {/* Header */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-2 mb-2 group"
+      >
+        <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700/40 rounded-xl px-3 py-2 flex-1">
+          <Search size={13} className="text-blue-400 flex-shrink-0" />
+          <span className="text-xs text-slate-400 flex-1 text-left">Búsqueda: <span className="text-slate-300 font-medium">"{query}"</span></span>
+          {expanded ? <ChevronUp size={13} className="text-slate-500" /> : <ChevronDown size={13} className="text-slate-500" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <>
+          {/* Places grid */}
+          {places.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {places.map((p, i) => (
+                <PlaceCard key={i} place={p} />
+              ))}
+            </div>
+          )}
+
+          {/* Organic results */}
+          {organic.length > 0 && places.length === 0 && (
+            <div className="space-y-2">
+              {organic.map((r, i) => (
+                <a
+                  key={i}
+                  href={r.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-slate-800/60 border border-slate-700/40 rounded-xl p-3 hover:border-blue-500/40 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-blue-400 hover:text-blue-300 leading-tight mb-0.5">{r.title}</p>
+                      <p className="text-xs text-slate-500 truncate mb-1">{r.link?.replace(/^https?:\/\//, '')}</p>
+                      {r.snippet && <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{r.snippet}</p>}
+                    </div>
+                    <ExternalLink size={12} className="text-slate-600 flex-shrink-0 mt-0.5" />
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Action Card ──────────────────────────────────────────────────────────────
 const COMMUNITY_TIPS = [
@@ -74,6 +296,7 @@ export default function AICoach({ preloadedMessage, onClose }) {
   } = useAppData();
 
   const [apiKey, setApiKey] = useState('');
+  const [serperKey, setSerperKey] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -94,8 +317,15 @@ export default function AICoach({ preloadedMessage, onClose }) {
       || import.meta.env.VITE_GROQ_API_KEY
       || '';
     if (savedKey) { setApiKey(savedKey); setHasApiKey(true); }
+
+    const savedSerperKey = localStorage.getItem('serper_api_key')
+      || userSettings?.serper_api_key
+      || import.meta.env.VITE_SERPER_API_KEY
+      || '';
+    if (savedSerperKey) setSerperKey(savedSerperKey);
+
     addWelcomeMessage();
-  }, [userSettings?.groq_api_key]);
+  }, [userSettings?.groq_api_key, userSettings?.serper_api_key]);
 
   useEffect(() => {
     if (preloadedMessage && hasApiKey) setInputMessage(preloadedMessage);
@@ -112,6 +342,8 @@ export default function AICoach({ preloadedMessage, onClose }) {
   const saveApiKey = () => {
     if (!apiKey.trim()) return;
     localStorage.setItem('groq_api_key', apiKey.trim());
+    if (serperKey.trim()) localStorage.setItem('serper_api_key', serperKey.trim());
+    else localStorage.removeItem('serper_api_key');
     setHasApiKey(true);
     setShowSettings(false);
     setError('');
@@ -272,8 +504,9 @@ Total entrenamientos: ${Object.keys(workoutLog).filter(d => Object.keys(workoutL
 Ejercicios únicos: ${exercises.length}
 
 === HERRAMIENTAS DISPONIBLES ===
-Puedes usar: replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets.
-Úsalas cuando el usuario pida cambios. Explica siempre qué hiciste y por qué.`;
+- replace_weekly_plan, modify_day_workout, create_training_cycle, update_exercise_targets: para gestionar el plan.
+- web_search: busca información real en internet. Úsala cuando el usuario pregunte por lugares, negocios, precios, horarios o cualquier info externa. Para gimnasios, tiendas o sitios físicos, usa type="places". Para info general, type="search". Incluye siempre la ciudad en la query.
+Explica siempre qué hiciste y por qué.`;
   };
 
   // ─── Groq API Call ──────────────────────────────────────────────────────────
@@ -346,20 +579,22 @@ ${context}`,
       return { text: choice.message.content || '', toolResults: [] };
     }
 
-    // Execute tools — wrap AppDataContext methods to match executeTool's expected API
-    const appState = { trainingPlan, trainingCycles };
+    // Execute tools — liveState is mutable so later tools see updates from earlier ones
+    const liveState = { trainingPlan, trainingCycles, serperKey };
     const appSetters = {
-      // Fire-and-forget: local state updates immediately, DB save in background
       setTrainingPlan: (fullPlan) => {
         const planData = fullPlan.plan || fullPlan;
-        const name = fullPlan.name || trainingPlan?.name || 'Mi Plan';
+        const name = fullPlan.name || liveState.trainingPlan?.name || 'Mi Plan';
         console.log('[AI] setTrainingPlan called, days:', Object.keys(planData).length);
+        // Update liveState so subsequent tools (e.g. modify_day_workout) see the new plan
+        liveState.trainingPlan = { plan: planData, name };
         savePlan(planData, name).catch(err => console.error('[AI] plan save failed:', err));
       },
       setTrainingCycles: (updated) => {
-        const existingIds = (trainingCycles || []).map(c => c.id);
+        const existingIds = (liveState.trainingCycles || []).map(c => c.id);
         const newCycles = (updated.cycles || []).filter(c => !existingIds.includes(c.id));
         console.log('[AI] setTrainingCycles called, new cycles:', newCycles.length);
+        liveState.trainingCycles = [...(liveState.trainingCycles || []), ...newCycles];
         for (const cycle of newCycles) {
           saveTrainingCycle(cycle).catch(err => console.error('[AI] cycle save failed:', err));
         }
@@ -371,7 +606,7 @@ ${context}`,
       let args = {};
       try { args = JSON.parse(tc.function.arguments); } catch {}
       console.log('[AI] 4. Executing tool:', tc.function.name, 'args keys:', Object.keys(args));
-      const result = await executeTool(tc.function.name, args, appState, appSetters);
+      const result = await executeTool(tc.function.name, args, liveState, appSetters);
       console.log('[AI] 5. Tool result:', result.success, result.summary?.slice(0, 80));
       toolResults.push({ toolCallId: tc.id, toolName: tc.function.name, result });
     }
@@ -534,47 +769,98 @@ ${context}`,
             </div>
           )}
 
-          <div className="bg-slate-800 rounded-2xl p-6 space-y-4">
-            {envKey ? (
-              <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-sm text-green-300 space-y-1">
-                <p className="font-semibold">✅ Clave compartida activa</p>
-                <p className="text-green-400/80">La app ya tiene una clave configurada. No necesitas hacer nada.</p>
+          <div className="bg-slate-800 rounded-2xl p-6 space-y-5">
+            {/* Groq section */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Brain size={16} className="text-purple-400" />
+                <h3 className="text-sm font-semibold text-white">Groq AI — Coach de entrenamiento</h3>
               </div>
-            ) : (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-sm text-amber-300">
-                <p className="font-semibold mb-1">Sin clave configurada</p>
-                <p className="text-amber-400/80">Añade tu propia clave de Groq (gratuita) para usar el coach.</p>
+              {envKey ? (
+                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-300">
+                  <p className="font-semibold">✅ Clave compartida activa</p>
+                  <p className="text-green-400/80 text-xs mt-0.5">La app ya tiene una clave. No necesitas añadir la tuya.</p>
+                </div>
+              ) : (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm text-amber-300">
+                  <p className="font-semibold mb-0.5">Sin clave Groq</p>
+                  <p className="text-amber-400/80 text-xs">Añade tu clave gratuita de Groq para usar el coach.</p>
+                </div>
+              )}
+              <div>
+                <label className="block text-slate-400 text-xs font-medium mb-1.5">
+                  {envKey ? 'Tu clave propia (sobreescribe la compartida)' : 'Groq API Key'}
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="gsk_..."
+                  className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                />
               </div>
-            )}
-            <div>
-              <label className="block text-slate-300 text-sm font-medium mb-1.5">
-                {envKey ? 'Sobreescribir con tu propia clave (opcional)' : 'Tu Groq API Key'}
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="gsk_..."
-                className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+              {!envKey && (
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-xs text-slate-300">
+                  <p className="font-semibold text-blue-300 mb-1.5">Cómo obtener tu clave Groq (gratis):</p>
+                  <ol className="list-decimal ml-4 space-y-1">
+                    <li>Ve a <span className="text-blue-400">console.groq.com</span></li>
+                    <li>Crea cuenta con Google</li>
+                    <li>API Keys → Create API Key</li>
+                  </ol>
+                </div>
+              )}
             </div>
-            {!envKey && (
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-slate-300">
-                <p className="font-semibold text-blue-300 mb-2">Cómo obtener API key (gratis):</p>
+
+            {/* Divider */}
+            <div className="border-t border-slate-700/60" />
+
+            {/* Serper section */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Search size={16} className="text-blue-400" />
+                <h3 className="text-sm font-semibold text-white">Búsqueda web — Lugares y noticias</h3>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Permite al coach buscar en internet: gimnasios cercanos, horarios, precios, noticias de fitness, etc.
+                Se muestra como tarjetas tipo Google Maps.
+              </p>
+              {serperKey ? (
+                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-300">
+                  <p className="font-semibold text-xs">✅ Búsqueda web activa</p>
+                </div>
+              ) : (
+                <div className="bg-slate-700/40 border border-slate-600/40 rounded-xl p-3 text-xs text-slate-400">
+                  Sin clave — el coach no podrá buscar en internet.
+                </div>
+              )}
+              <div>
+                <label className="block text-slate-400 text-xs font-medium mb-1.5">
+                  Serper API Key (opcional)
+                </label>
+                <input
+                  type="password"
+                  value={serperKey}
+                  onChange={e => setSerperKey(e.target.value)}
+                  placeholder="Tu clave de serper.dev..."
+                  className="w-full bg-slate-900 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-xs text-slate-300">
+                <p className="font-semibold text-blue-300 mb-1.5">Cómo obtener tu clave Serper (2500 búsquedas gratis):</p>
                 <ol className="list-decimal ml-4 space-y-1">
-                  <li>Ve a <span className="text-blue-400">console.groq.com</span></li>
-                  <li>Crea cuenta con Google</li>
-                  <li>API Keys → Create API Key</li>
-                  <li>Copia la key y pégala aquí</li>
+                  <li>Ve a <span className="text-blue-400">serper.dev</span></li>
+                  <li>Regístrate — no hace falta tarjeta</li>
+                  <li>Dashboard → API Key → Copia y pega aquí</li>
                 </ol>
               </div>
-            )}
+            </div>
+
             <button
               onClick={saveApiKey}
-              disabled={!apiKey.trim()}
+              disabled={!apiKey.trim() && !envKey}
               className="w-full bg-gradient-to-r from-green-600 to-emerald-600 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-all"
             >
-              Guardar clave
+              Guardar configuración
             </button>
           </div>
         </div>
@@ -594,6 +880,11 @@ ${context}`,
         ) : <div className="w-16" />}
         <h1 className="text-lg font-bold flex items-center gap-2">
           <Brain size={20} /> Coach IA
+          {serperKey && (
+            <span className="text-[10px] bg-blue-500/30 text-blue-300 border border-blue-500/40 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <Search size={9} /> Web
+            </span>
+          )}
         </h1>
         <div className="flex items-center gap-2">
           {messages.length > 1 && (
@@ -710,8 +1001,12 @@ ${context}`,
             {/* Messages */}
             {messages.map((msg, idx) => (
               <div key={idx}>
-                {msg.toolResults?.map((tr, ti) =>
-                  tr.result.readResult ? null : (
+                {msg.toolResults?.map((tr, ti) => {
+                  if (tr.toolName === 'web_search' && tr.result.searchData) {
+                    return <SearchResultsCard key={ti} data={tr.result.searchData} />;
+                  }
+                  if (tr.result.readResult && !tr.result.searchData) return null;
+                  return (
                     <ActionCard
                       key={ti}
                       toolName={tr.toolName}
@@ -720,12 +1015,12 @@ ${context}`,
                       undoData={tr.result.undoData}
                       onUndo={handleUndo}
                     />
-                  )
-                )}
+                  );
+                })}
                 {msg.content && (
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl p-4 shadow-lg ${
-                      msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-100'
+                    <div className={`max-w-[85%] rounded-2xl p-4 shadow-lg ${
+                      msg.role === 'user' ? 'bg-cyan-600 text-white' : 'bg-slate-800/90 text-slate-100'
                     }`}>
                       {msg.role === 'assistant' && (
                         <div className="flex items-center gap-1.5 mb-2">
@@ -733,7 +1028,10 @@ ${context}`,
                           <span className="text-xs text-purple-400 font-semibold">Coach IA</span>
                         </div>
                       )}
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                      {msg.role === 'assistant'
+                        ? <MarkdownMessage content={msg.content} />
+                        : <p className="text-sm leading-relaxed">{msg.content}</p>
+                      }
                     </div>
                   </div>
                 )}

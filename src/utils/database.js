@@ -20,8 +20,7 @@ export async function getProfile(userId) {
 export async function updateProfile(userId, updates) {
   const { data, error } = await supabase
     .from('profiles')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', userId)
+    .upsert({ id: userId, ...updates, updated_at: new Date().toISOString() })
     .select()
     .single();
   if (error) throw error;
@@ -41,8 +40,7 @@ export async function getUserSettings(userId) {
 export async function updateUserSettings(userId, updates) {
   const { data, error } = await supabase
     .from('user_settings')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', userId)
+    .upsert({ id: userId, ...updates, updated_at: new Date().toISOString() })
     .select()
     .single();
   if (error) throw error;
@@ -92,38 +90,21 @@ export async function getTrainingPlan(userId) {
 }
 
 export async function upsertTrainingPlan(userId, planData, name = 'Mi Plan') {
-  // Get existing active plan
-  const existing = await getTrainingPlan(userId);
-
-  if (existing) {
-    const { data, error } = await supabase
-      .from('training_plans')
-      .update({
-        plan: planData,
-        name,
-        version: (existing.version || 0) + 1,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', existing.id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  } else {
-    const { data, error } = await supabase
-      .from('training_plans')
-      .insert({
-        user_id: userId,
-        plan: planData,
-        name,
-        is_active: true,
-        version: 1
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  }
+  // Atomic upsert — no preliminary SELECT needed.
+  // Requires UNIQUE constraint on training_plans(user_id) — see fix-training-plan-constraint.sql
+  const { data, error } = await supabase
+    .from('training_plans')
+    .upsert({
+      user_id: userId,
+      plan: planData,
+      name,
+      is_active: true,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 // ─── Training Cycles ──────────────────────────────────────────────────────────
@@ -398,22 +379,31 @@ export async function deleteProgressPhoto(userId, photoId) {
 // ─── Batch Load (on app startup) ─────────────────────────────────────────────
 
 export async function loadAllUserData(userId) {
+  const t0 = Date.now();
+  const timed = (name, promise) => {
+    const start = Date.now();
+    return promise
+      .then(r => { console.log(`[DB] ${name} OK ${Date.now() - start}ms`); return r; })
+      .catch(e => { console.log(`[DB] ${name} ERR ${Date.now() - start}ms`, e?.message); throw e; });
+  };
+
   const [
     profileRes, settingsRes, memoryRes, planRes, cyclesRes,
     workoutsRes, feelingsRes, nutritionRes, prRes, metricsRes, photosRes
   ] = await Promise.allSettled([
-    getProfile(userId),
-    getUserSettings(userId),
-    getAIMemory(userId),
-    getTrainingPlan(userId),
-    getTrainingCycles(userId),
-    getWorkouts(userId, 180),
-    getFeelings(userId, 60),
-    getNutrition(userId, 60),
-    getPersonalRecords(userId),
-    getBodyMetrics(userId),
-    getProgressPhotos(userId),
+    timed('profile', getProfile(userId)),
+    timed('settings', getUserSettings(userId)),
+    timed('aiMemory', getAIMemory(userId)),
+    timed('plan', getTrainingPlan(userId)),
+    timed('cycles', getTrainingCycles(userId)),
+    timed('workouts', getWorkouts(userId, 180)),
+    timed('feelings', getFeelings(userId, 60)),
+    timed('nutrition', getNutrition(userId, 60)),
+    timed('prs', getPersonalRecords(userId)),
+    timed('metrics', getBodyMetrics(userId)),
+    timed('photos', getProgressPhotos(userId)),
   ]);
+  console.log(`[DB] loadAllUserData total ${Date.now() - t0}ms`);
 
   return {
     profile: profileRes.status === 'fulfilled' ? profileRes.value : null,

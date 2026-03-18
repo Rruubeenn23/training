@@ -28,6 +28,7 @@ export default defineConfig({
           }
         ]
       },
+      devOptions: { enabled: false },
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],

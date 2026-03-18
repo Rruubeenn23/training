@@ -44,20 +44,30 @@ export function AppDataProvider({ children }) {
 
   // Load all data when user logs in
   const loadData = useCallback(async () => {
+    console.log('[DATA] loadData fired, user:', user?.id ?? 'NULL');
     if (!user) return;
+
     setDataLoading(true);
     try {
       const data = await loadAllUserData(user.id);
+      console.log('[DATA] Supabase returned:', {
+        plan: !!data.trainingPlan,
+        workouts: Object.keys(data.workoutLogs || {}).length,
+        feelings: Object.keys(data.feelings || {}).length,
+      });
 
       setWorkoutLog(data.workoutLogs || {});
       setWorkoutMeta(data.workoutMeta || {});
-      setTrainingPlan(data.trainingPlan ? {
-        plan: data.trainingPlan.plan,
-        name: data.trainingPlan.name,
-        version: data.trainingPlan.version,
-        activeCycleId: data.trainingPlan.active_cycle_id,
-        updatedAt: data.trainingPlan.updated_at,
-      } : null);
+
+      if (data.trainingPlan) {
+        setTrainingPlan({
+          plan: data.trainingPlan.plan,
+          name: data.trainingPlan.name,
+          version: data.trainingPlan.version,
+          activeCycleId: data.trainingPlan.active_cycle_id,
+          updatedAt: data.trainingPlan.updated_at,
+        });
+      }
       setTrainingCycles(data.trainingCycles || []);
       setPersonalRecords(data.personalRecords || {});
       setBodyMetrics(data.bodyMetrics || { entries: [] });
@@ -199,9 +209,10 @@ export function AppDataProvider({ children }) {
         await upsertTrainingPlan(user.id, planData, name || 'Mi Plan');
       } catch (err) {
         console.error('Plan sync failed:', err);
+        toast.error('Error al guardar el plan. Comprueba tu conexión.');
       }
     }
-  }, [user, trainingPlan]);
+  }, [user, trainingPlan, toast]);
 
   const saveTrainingCycle = useCallback(async (cycle) => {
     const newCycles = [...trainingCycles, cycle];

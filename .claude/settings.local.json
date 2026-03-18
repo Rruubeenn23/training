@@ -3,7 +3,9 @@
     "allow": [
       "Bash(grep -E \"\\\\.\\(js|jsx|json|toml|md\\)$\")",
       "Bash(find /c/Users/ruben/Documents/training/src -type f \\\\\\(-name *.js -o -name *.jsx -o -name *.css \\\\\\))",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npm install:*)",
+      "Bash(npm list:*)"
     ]
   }
 }

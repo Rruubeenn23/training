@@ -51,7 +51,9 @@ Utility functions that use a `window.storage` abstraction (falls back to `localS
 - Uses **Groq API** (meta-llama/llama-4-scout-17b-16e-instruct model), NOT Claude API
 - API key priority: `localStorage groq_api_key` → `userSettings.groq_api_key` → `VITE_GROQ_API_KEY` env var
 - Sends a large system prompt with full context (memory, plan, workouts, PRs, feelings, nutrition)
-- Supports **tool calling**: `replace_weekly_plan`, `modify_day_workout`, `create_training_cycle`, `update_exercise_targets`
+- Supports **tool calling**: `replace_weekly_plan`, `modify_day_workout`, `create_training_cycle`, `update_exercise_targets`, `web_search`
+- **Markdown rendering**: assistant messages use `react-markdown` + `remark-gfm` with custom dark-theme Tailwind components. User messages are plain text.
+- **Web search** (`web_search` tool): calls Serper.dev API. type="places" → Google Maps-style business cards (name, rating, address, phone, website, thumbnail, Maps/Call/Web buttons). type="search" → organic result cards. Requires `VITE_SERPER_API_KEY` or user's own key stored in `localStorage serper_api_key`.
 - **Rate limiting**: minimum 3 seconds between message sends (client-side)
 - Memory extraction runs every 4 messages (async, calls Groq to extract new facts)
 

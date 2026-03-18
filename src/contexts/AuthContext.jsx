@@ -16,14 +16,10 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Get initial session
+    // getSession() waits for Supabase's internal session restore + token refresh lock
+    // to release before returning. This ensures API calls don't hang on page reload.
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        // If session exists but is expired, refresh it once
-        if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          session = refreshed?.session || session;
-        }
+      .then(({ data: { session } }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) loadProfile(session.user.id);
@@ -31,8 +27,10 @@ export function AuthProvider({ children }) {
       })
       .catch(() => setLoading(false));
 
-    // Listen for auth changes
+    // onAuthStateChange handles subsequent events (login, logout, token refresh).
+    // Skip INITIAL_SESSION — already handled by getSession() above.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'INITIAL_SESSION') return;
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -160,7 +158,7 @@ export function AuthProvider({ children }) {
     session,
     profile,
     loading,
-    isOnboardingComplete: profile?.onboarding_complete ?? localOnboardingComplete ?? false,
+    isOnboardingComplete: (profile?.onboarding_complete === true) || (localOnboardingComplete === true),
     displayName: profile?.display_name || user?.email?.split('@')[0] || 'Usuario',
     signUp,
     signIn,
